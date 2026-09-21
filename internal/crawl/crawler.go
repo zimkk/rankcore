@@ -134,7 +134,15 @@ func (c *Crawler) fetchAndExtract(ctx context.Context, client *http.Client, targ
 	bodyReader := io.LimitReader(resp.Body, 2*1024*1024)
 	
 	// Use our extractor
-	_ = extract.Extract(bodyReader, snap)
+	meta, _ := extract.Extract(bodyReader)
+	if meta != nil {
+		snap.Title = meta.Title
+		snap.MetaDesc = meta.MetaDesc
+		snap.Canonical = meta.Canonical
+		snap.InternalLinks = meta.InternalLinks
+		snap.Hreflang = meta.Hreflang
+		snap.JSONLD = meta.JSONLD
+	}
 
 	return snap
 }

@@ -4,30 +4,40 @@ import (
 	"io"
 	"strings"
 	"golang.org/x/net/html"
-	"rankcore/internal/crawl"
 )
 
-// Extract parses an HTML document and populates the PageSnapshot.
-func Extract(body io.Reader, snapshot *crawl.PageSnapshot) error {
+type Metadata struct {
+	Title         string
+	MetaDesc      string
+	Canonical     string
+	InternalLinks []string
+	Hreflang      map[string]string
+	JSONLD        []string
+}
+
+// Extract parses an HTML document and returns Metadata.
+func Extract(body io.Reader) (*Metadata, error) {
 	z := html.NewTokenizer(body)
 
-	snapshot.Hreflang = make(map[string]string)
+	meta := &Metadata{
+		Hreflang: make(map[string]string),
+	}
 
 	for {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
 			if z.Err() == io.EOF {
-				return nil
+				return meta, nil
 			}
-			return z.Err()
+			return meta, z.Err()
 		case html.StartTagToken, html.SelfClosingTagToken:
 			t := z.Token()
 			switch t.Data {
 			case "title":
 				if tt == html.StartTagToken {
 					if z.Next() == html.TextToken {
-						snapshot.Title = strings.TrimSpace(z.Token().Data)
+						meta.Title = strings.TrimSpace(z.Token().Data)
 					}
 				}
 			case "meta":
@@ -40,7 +50,7 @@ func Extract(body io.Reader, snapshot *crawl.PageSnapshot) error {
 					}
 				}
 				if name == "description" {
-					snapshot.MetaDesc = content
+					meta.MetaDesc = content
 				}
 			case "link":
 				var rel, href, hreflang string
@@ -54,9 +64,9 @@ func Extract(body io.Reader, snapshot *crawl.PageSnapshot) error {
 					}
 				}
 				if rel == "canonical" {
-					snapshot.Canonical = href
+					meta.Canonical = href
 				} else if rel == "alternate" && hreflang != "" {
-					snapshot.Hreflang[hreflang] = href
+					meta.Hreflang[hreflang] = href
 				}
 			case "a":
 				for _, attr := range t.Attr {
@@ -64,7 +74,7 @@ func Extract(body io.Reader, snapshot *crawl.PageSnapshot) error {
 						href := strings.TrimSpace(attr.Val)
 						if strings.HasPrefix(href, "http") || strings.HasPrefix(href, "/") {
 							// very simplified link classification
-							snapshot.InternalLinks = append(snapshot.InternalLinks, href)
+							meta.InternalLinks = append(meta.InternalLinks, href)
 						}
 					}
 				}
@@ -78,7 +88,7 @@ func Extract(body io.Reader, snapshot *crawl.PageSnapshot) error {
 				if typ == "application/ld+json" {
 					if tt == html.StartTagToken {
 						if z.Next() == html.TextToken {
-							snapshot.JSONLD = append(snapshot.JSONLD, z.Token().Data)
+							meta.JSONLD = append(meta.JSONLD, z.Token().Data)
 						}
 					}
 				}
