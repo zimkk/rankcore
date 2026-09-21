@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "paths": [
+        "~/.claude/skills/rank"
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "paths": [
+        "~/.codex/skills/rank"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "paths": [
+        "~/.cursor/skills/rank"
+      ]
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "paths": [
+        "~/.gemini/skills/rank"
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "paths": [
+        "~/.opencode/skills/rank"
+      ]
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "paths": [
+        "~/.cline/skills/rank"
+      ]
+    }
+  ]
+}
