@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 )
 
