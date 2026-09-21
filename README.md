@@ -1,12 +1,11 @@
 <div align="center">
-  <img src="https://via.placeholder.com/150x150/1a1a1a/ffffff?text=RankCore" alt="RankCore Logo" width="120" height="120">
+  
   
   <h1>RankCore</h1>
   <p><strong>Make your coding agent understand how your website should be discovered — then let it fix the code.</strong></p>
 
   <p>
     <a href="https://github.com/zimkk/rankcore/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status"></a>
-    <a href="https://goreportcard.com/report/github.com/zimkk/rankcore"><img src="https://goreportcard.com/badge/github.com/zimkk/rankcore?style=flat-square" alt="Go Report Card"></a>
     <a href="https://github.com/zimkk/rankcore/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   </p>
 </div>
