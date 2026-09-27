@@ -1,11 +1,10 @@
 <div align="center">
-  
-  
   <h1>RankCore</h1>
   <p><strong>Make your coding agent understand how your website should be discovered — then let it fix the code.</strong></p>
 
   <p>
-    <a href="https://github.com/zimkk/rankcore/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status"></a>
+    <a href="https://github.com/zimkk/rankcore/actions/workflows/ci.yml"><img src="https://github.com/zimkk/rankcore/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+    <a href="https://goreportcard.com/report/github.com/zimkk/rankcore"><img src="https://goreportcard.com/badge/github.com/zimkk/rankcore?style=flat-square" alt="Go Report Card"></a>
     <a href="https://github.com/zimkk/rankcore/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
   </p>
 </div>
@@ -17,6 +16,8 @@
 RankCore gives AI coding agents (like **Claude Code, Cursor, Codex, Gemini CLI, and Cline**) a current search/AI-search workflow paired with a deterministic local audit engine. 
 
 Instead of relying on heuristic SEO advice from outdated data, RankCore executes a rigorous, real-time technical audit of your project and presents evidence-based fixes directly to your agent.
+
+> **Status:** Early development. The `/rank` skill assets and CLI skeleton are in place; the deterministic audit engine is being built out milestone by milestone per the [master plan](RANKCORE_MASTER_PLAN.md). Some capabilities described below are partially implemented.
 
 ### Why RankCore?
 - **Zero-Key:** No RankCore account or external SEO APIs required.
@@ -42,17 +43,25 @@ Instead of relying on heuristic SEO advice from outdated data, RankCore executes
 
 ## 📦 Installation
 
-RankCore can be installed quickly on any machine. It compiles to a single, portable binary.
+RankCore installs directly from this GitHub repository — no custom domain, account, or API key required. The installer downloads the latest precompiled release from [GitHub Releases](https://github.com/zimkk/rankcore/releases), verifies its SHA-256 checksum, installs it to a user-writable directory (no sudo/admin), and runs `rankcore setup` to register the `/rank` skill with your detected coding agents.
 
-### macOS / Linux
+### macOS / Linux / WSL
 ```bash
-curl -fsSL https://rankcore.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zimkk/rankcore/main/install.sh | sh
 ```
 
 ### Windows (PowerShell)
 ```powershell
-irm https://rankcore.dev/install.ps1 | iex
+irm https://raw.githubusercontent.com/zimkk/rankcore/main/install.ps1 | iex
 ```
+
+### Build from source
+Requires Go 1.23+:
+```bash
+go install github.com/zimkk/rankcore/cmd/rankcore@latest
+```
+
+> **Note:** Precompiled binaries are published on tagged releases. If the installer reports a missing release for your platform, use the source build above or download manually from the [releases page](https://github.com/zimkk/rankcore/releases).
 
 ---
 
@@ -83,7 +92,7 @@ rankcore doctor
 rankcore audit https://your-site.com
 
 # Verify fixes against a baseline
-rankcore verify --baseline .rankcore/runs/latest
+rankcore verify https://your-site.com --baseline .rankcore/runs/<run-id>/audit.json
 ```
 
 ---

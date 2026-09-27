@@ -1,8 +1,8 @@
 package rules
 
 import (
-	"rankcore/internal/crawl"
-	"rankcore/internal/report"
+	"github.com/zimkk/rankcore/internal/crawl"
+	"github.com/zimkk/rankcore/internal/report"
 )
 
 type HTTP5xxRule struct{}
@@ -20,7 +20,7 @@ func (r *HTTP5xxRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
 		return &report.Finding{
 			ID:          r.ID(),
 			RuleVersion: r.Version(),
-			Category:    "eligibility",
+			Category:    "availability",
 			Severity:    "critical",
 			Confidence:  1.0,
 			URL:         snapshot.URL,
@@ -28,6 +28,7 @@ func (r *HTTP5xxRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
 			Evidence: map[string]interface{}{
 				"status_code": snapshot.StatusCode,
 			},
+			Remediation: "Resolve backend application errors or server configuration faults to restore HTTP 200 responses.",
 		}
 	}
 	return nil
@@ -44,18 +45,19 @@ func (r *HTTP4xxRule) Version() int {
 }
 
 func (r *HTTP4xxRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode >= 400 && snapshot.StatusCode < 500 && snapshot.StatusCode != 404 { // 404 handled separately or contextual
+	if snapshot.StatusCode >= 400 && snapshot.StatusCode < 500 {
 		return &report.Finding{
 			ID:          r.ID(),
 			RuleVersion: r.Version(),
-			Category:    "hygiene",
+			Category:    "availability",
 			Severity:    "high",
 			Confidence:  1.0,
 			URL:         snapshot.URL,
-			Summary:     "Internal public page returns 4xx unexpectedly",
+			Summary:     "Internal public page returns 4xx client error unexpectedly",
 			Evidence: map[string]interface{}{
 				"status_code": snapshot.StatusCode,
 			},
+			Remediation: "Fix broken links, restore the missing resource, or set up a 301 redirect to the appropriate live destination.",
 		}
 	}
 	return nil
