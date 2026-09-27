@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
-	"rankcore/internal/httpx"
-	"rankcore/internal/extract"
+	"github.com/zimkk/rankcore/internal/extract"
+	"github.com/zimkk/rankcore/internal/httpx"
 )
 
 // Crawler manages the URL frontier and concurrent execution.
@@ -130,6 +130,11 @@ func (c *Crawler) fetchAndExtract(ctx context.Context, client *http.Client, targ
 	snap.ContentType = resp.Header.Get("Content-Type")
 	snap.Headers = resp.Header
 
+	// Populate X-Robots-Tag from response headers
+	if xrt := resp.Header.Get("X-Robots-Tag"); xrt != "" {
+		snap.XRobotsTag = xrt
+	}
+
 	// Read up to a limit (e.g., 2MB)
 	bodyReader := io.LimitReader(resp.Body, 2*1024*1024)
 	
@@ -139,9 +144,28 @@ func (c *Crawler) fetchAndExtract(ctx context.Context, client *http.Client, targ
 		snap.Title = meta.Title
 		snap.MetaDesc = meta.MetaDesc
 		snap.Canonical = meta.Canonical
+		snap.RobotsMeta = meta.RobotsMeta
+		snap.Viewport = meta.Viewport
+		snap.Lang = meta.Lang
 		snap.InternalLinks = meta.InternalLinks
+		snap.ExternalLinks = meta.ExternalLinks
+		snap.AnchorTexts = meta.AnchorTexts
 		snap.Hreflang = meta.Hreflang
 		snap.JSONLD = meta.JSONLD
+		snap.OpenGraph = meta.OpenGraph
+		snap.TwitterCard = meta.TwitterCard
+		snap.H1 = meta.H1
+		snap.Headings = meta.Headings
+		snap.TextLength = meta.TextLength
+
+		// Map extract.ImageInfo → crawl.ImageInfo
+		for _, img := range meta.Images {
+			snap.Images = append(snap.Images, ImageInfo{
+				Src:    img.Src,
+				Alt:    img.Alt,
+				HasAlt: img.HasAlt,
+			})
+		}
 	}
 
 	return snap

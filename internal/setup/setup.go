@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,33 +47,60 @@ func DetectAgents(reg *Registry) []AgentConfig {
 	return detected
 }
 
-// InstallSkill simulates or performs copying the embedded rank skill to the agent's skill directory.
-func InstallSkill(agent AgentConfig, skillSourcePath string, dryRun bool) error {
+// CopyFSToDir extracts files from an embedded fs.FS subpath to a target directory on disk.
+func CopyFSToDir(src fs.FS, srcSub string, destDir string) error {
+	sub, err := fs.Sub(src, srcSub)
+	if err != nil {
+		return err
+	}
+	return fs.WalkDir(sub, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == "." {
+			return nil
+		}
+		destPath := filepath.Join(destDir, filepath.FromSlash(path))
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+		data, err := fs.ReadFile(sub, path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return err
+		}
+		return os.WriteFile(destPath, data, 0644)
+	})
+}
+
+// InstallSkill copies the embedded rank skill to the agent's skill directory.
+func InstallSkill(agent AgentConfig, assetsFS fs.FS, dryRun bool) error {
 	homeDir, _ := os.UserHomeDir()
-	
+
 	for _, p := range agent.Paths {
 		targetPath := strings.Replace(p, "~", homeDir, 1)
-		
-		fmt.Printf("Installing /rank skill for %s to %s...\n", agent.Name, targetPath)
-		
+
 		if dryRun {
-			fmt.Println("[DRY RUN] Would create directory and copy files.")
+			fmt.Printf("  [DRY RUN] Would install /rank to %s\n", targetPath)
 			continue
 		}
-		
-		err := os.MkdirAll(targetPath, 0755)
-		if err != nil {
-			return fmt.Errorf("failed to create directory %s: %v", targetPath, err)
+
+		if err := os.MkdirAll(targetPath, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", targetPath, err)
 		}
-		
-		// In a real implementation, we would write the embedded fs.FS files here.
-		// For the end-to-end working script without full embed, we touch a SKILL.md
-		skillFile := filepath.Join(targetPath, "SKILL.md")
-		err = os.WriteFile(skillFile, []byte("# RankCore Skill\n"), 0644)
-		if err != nil {
-			return fmt.Errorf("failed to write SKILL.md: %v", err)
+
+		if assetsFS != nil {
+			if err := CopyFSToDir(assetsFS, "skill/rank", targetPath); err != nil {
+				return fmt.Errorf("failed to copy skill files to %s: %w", targetPath, err)
+			}
+		} else {
+			skillFile := filepath.Join(targetPath, "SKILL.md")
+			if err := os.WriteFile(skillFile, []byte("# RankCore Skill\n"), 0644); err != nil {
+				return fmt.Errorf("failed to write SKILL.md: %w", err)
+			}
 		}
-		fmt.Println("Successfully installed.")
 	}
 	return nil
 }

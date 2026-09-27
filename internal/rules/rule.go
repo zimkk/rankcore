@@ -1,8 +1,8 @@
 package rules
 
 import (
-	"rankcore/internal/crawl"
-	"rankcore/internal/report"
+	"github.com/zimkk/rankcore/internal/crawl"
+	"github.com/zimkk/rankcore/internal/report"
 )
 
 // Rule represents a deterministic SEO check.

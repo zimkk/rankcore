@@ -1,9 +1,10 @@
 package rules
 
 import (
-	"rankcore/internal/crawl"
-	"rankcore/internal/report"
 	"strings"
+
+	"github.com/zimkk/rankcore/internal/crawl"
+	"github.com/zimkk/rankcore/internal/report"
 )
 
 type MetaNoindexRule struct{}
@@ -17,31 +18,37 @@ func (r *MetaNoindexRule) Version() int {
 }
 
 func (r *MetaNoindexRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	// Look for X-Robots-Tag or meta robots
-	noindex := false
-	for _, vals := range snapshot.Headers {
-		for _, val := range vals {
-			if strings.Contains(strings.ToLower(val), "noindex") {
-				noindex = true
+	noindex := snapshot.Noindex()
+
+	// Also check raw Headers map if populated
+	if !noindex && snapshot.Headers != nil {
+		for k, vals := range snapshot.Headers {
+			if strings.EqualFold(k, "X-Robots-Tag") {
+				for _, v := range vals {
+					lower := strings.ToLower(v)
+					if strings.Contains(lower, "noindex") || strings.Contains(lower, "none") {
+						noindex = true
+						break
+					}
+				}
 			}
 		}
 	}
-	
-	// Assume HTML extractor populates something or we evaluate raw headers here.
-	// We'd also check snapshot metadata if extracted.
-	
+
 	if noindex {
 		return &report.Finding{
 			ID:          r.ID(),
 			RuleVersion: r.Version(),
 			Category:    "indexability",
-			Severity:    "high", // Could be intentional, requires context
+			Severity:    "high",
 			Confidence:  1.0,
 			URL:         snapshot.URL,
 			Summary:     "Intended public page is explicitly noindexed",
 			Evidence: map[string]interface{}{
-				"directive": "noindex",
+				"robots_meta":  snapshot.RobotsMeta,
+				"x_robots_tag": snapshot.XRobotsTag,
 			},
+			Remediation: "Remove the 'noindex' directive from meta tags or HTTP response headers if the page should be indexed.",
 		}
 	}
 	return nil

@@ -1,8 +1,9 @@
 package rules
 
 import (
-	"rankcore/internal/crawl"
 	"testing"
+
+	"github.com/zimkk/rankcore/internal/crawl"
 )
 
 func TestHTTP5xxRule(t *testing.T) {

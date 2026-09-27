@@ -1,9 +1,10 @@
 package rules
 
 import (
-	"rankcore/internal/crawl"
-	"rankcore/internal/report"
 	"strings"
+
+	"github.com/zimkk/rankcore/internal/crawl"
+	"github.com/zimkk/rankcore/internal/report"
 )
 
 type BrokenLinkRule struct{}

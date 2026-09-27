@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+rankcore
+
+# Test artifacts & audit output
+audit-report.json
+audit-report.md
+verification-report.json
+verification-report.md
+.rank/
+dist/
+build/

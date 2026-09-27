@@ -1,0 +1,11 @@
+* text=auto
+
+# Shell scripts and YAML must keep LF line endings to run correctly
+# when fetched raw from GitHub or executed in CI.
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.go   text eol=lf
+
+# PowerShell scripts work with either, but CRLF is conventional on Windows.
+*.ps1  text eol=crlf
