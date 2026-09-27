@@ -51,36 +51,36 @@ type RenderedSnapshot struct {
 
 // PageSnapshot represents the extracted contents of a page.
 type PageSnapshot struct {
-	URL           string
-	FinalURL      string
-	StatusCode    int
-	ContentType   string
-	Headers       map[string][]string
-	Title         string
-	MetaDesc      string
-	Canonical     string
-	RobotsMeta    string // content attribute of <meta name="robots">
-	XRobotsTag    string // X-Robots-Tag response header
-	Viewport      string // content attribute of <meta name="viewport">
-	Lang          string
-	H1            []string
-	Headings      map[string][]string // key is "h1" through "h6"
-	TextLength    int
-	Hreflang      map[string]string
-	InternalLinks []string
-	ExternalLinks []string
-	AnchorTexts   map[string]string // href -> anchor text
-	Images        []ImageInfo
-	JSONLD        []string
-	OpenGraph     map[string]string
-	TwitterCard   map[string]string
-	RedirectChain []string
-	RedirectLoop  bool
-	FetchError    string
+	URL             string
+	FinalURL        string
+	StatusCode      int
+	ContentType     string
+	Headers         map[string][]string
+	Title           string
+	MetaDesc        string
+	Canonical       string
+	RobotsMeta      string // content attribute of <meta name="robots">
+	XRobotsTag      string // X-Robots-Tag response header
+	Viewport        string // content attribute of <meta name="viewport">
+	Lang            string
+	H1              []string
+	Headings        map[string][]string // key is "h1" through "h6"
+	TextLength      int
+	Hreflang        map[string]string
+	InternalLinks   []string
+	ExternalLinks   []string
+	AnchorTexts     map[string]string // href -> anchor text
+	Images          []ImageInfo
+	JSONLD          []string
+	OpenGraph       map[string]string
+	TwitterCard     map[string]string
+	RedirectChain   []string
+	RedirectLoop    bool
+	FetchError      string
 	BlockedByRobots bool
-	RobotsRule    string // matched robots.txt rule when blocked
-	Depth         int
-	Rendered      *RenderedSnapshot
+	RobotsRule      string // matched robots.txt rule when blocked
+	Depth           int
+	Rendered        *RenderedSnapshot
 }
 
 // ImageInfo tracks an image element and its alt attribute.
@@ -107,4 +107,3 @@ func hasRobotsDirective(value, directive string) bool {
 	}
 	return false
 }
-

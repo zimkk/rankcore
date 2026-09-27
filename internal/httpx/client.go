@@ -77,7 +77,7 @@ func Request(ctx context.Context, client *http.Client, targetURL, userAgent stri
 		return nil, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-	
+
 	// Recommend accepting compressed content
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")

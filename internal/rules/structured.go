@@ -10,7 +10,7 @@ import (
 // RC-STRUCT-001: Invalid JSON-LD (Lighthouse: structured-data)
 type StructuredDataValidRule struct{}
 
-func (r *StructuredDataValidRule) ID() string  { return "RC-STRUCT-001" }
+func (r *StructuredDataValidRule) ID() string   { return "RC-STRUCT-001" }
 func (r *StructuredDataValidRule) Version() int { return 1 }
 
 func (r *StructuredDataValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
@@ -43,7 +43,7 @@ func (r *StructuredDataValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report
 		Remediation: "Fix the JSON syntax in the <script type=\"application/ld+json\"> blocks so they parse as valid JSON.",
 		Evidence: map[string]interface{}{
 			"invalid_block_positions": invalidBlocks,
-			"total_blocks":           len(snapshot.JSONLD),
+			"total_blocks":            len(snapshot.JSONLD),
 		},
 	}
 }

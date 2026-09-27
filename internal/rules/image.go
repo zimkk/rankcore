@@ -8,7 +8,7 @@ import (
 // RC-IMG-001: Images missing alt attributes (Lighthouse: image-alt)
 type ImageAltRule struct{}
 
-func (r *ImageAltRule) ID() string  { return "RC-IMG-001" }
+func (r *ImageAltRule) ID() string   { return "RC-IMG-001" }
 func (r *ImageAltRule) Version() int { return 1 }
 
 func (r *ImageAltRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

@@ -20,7 +20,7 @@ func (r *BrokenLinkRule) Version() int {
 func (r *BrokenLinkRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
 	// A true broken link rule needs to know the graph state of the crawl.
 	// We'll flag obvious internal formatting errors as a proxy.
-	
+
 	for _, link := range snapshot.InternalLinks {
 		if strings.Contains(link, "undefined") || strings.Contains(link, "null") {
 			return &report.Finding{
@@ -37,6 +37,6 @@ func (r *BrokenLinkRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding 
 			}
 		}
 	}
-	
+
 	return nil
 }

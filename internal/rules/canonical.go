@@ -25,7 +25,7 @@ func (r *CanonicalTargetRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Fin
 	// checking cross-url integrity usually requires a post-crawl verification step.
 	// For end-to-end completeness of the rule structure, we assume we flag if canonical differs
 	// significantly or is an obvious error state.
-	
+
 	// Stub check: just log if canonical is not the final URL and leave it for post-crawl.
 	if snapshot.Canonical != snapshot.FinalURL {
 		return &report.Finding{

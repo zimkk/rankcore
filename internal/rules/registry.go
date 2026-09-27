@@ -20,30 +20,30 @@ func NewRegistry() *Registry {
 	// Register all rules
 	r.rules = append(r.rules,
 		// --- Availability & Crawlability ---
-		&HTTP5xxRule{},           // RC-HTTP-001
-		&HTTP4xxRule{},           // RC-HTTP-002
-		&HTTPSuccessRule{},       // RC-HTTP-003
-		&RobotsCrawlableRule{},   // RC-HTTP-004
-		&RedirectChainRule{},     // RC-HTTP-005
+		&HTTP5xxRule{},         // RC-HTTP-001
+		&HTTP4xxRule{},         // RC-HTTP-002
+		&HTTPSuccessRule{},     // RC-HTTP-003
+		&RobotsCrawlableRule{}, // RC-HTTP-004
+		&RedirectChainRule{},   // RC-HTTP-005
 
 		// --- Indexability ---
-		&MetaNoindexRule{},       // RC-INDEX-001
+		&MetaNoindexRule{}, // RC-INDEX-001
 
 		// --- Discovery & Links ---
-		&BrokenLinkRule{},        // RC-LINK-001
-		&LinkTextRule{},          // RC-LINK-002
-		&CrawlableAnchorRule{},   // RC-LINK-003
+		&BrokenLinkRule{},      // RC-LINK-001
+		&LinkTextRule{},        // RC-LINK-002
+		&CrawlableAnchorRule{}, // RC-LINK-003
 
 		// --- Metadata & Headings ---
-		&MissingTitleRule{},      // RC-META-001
-		&MissingMetaDescRule{},   // RC-META-002
-		&MissingViewportRule{},   // RC-META-003
-		&TitleQualityRule{},      // RC-META-004
-		&H1StructureRule{},       // RC-META-005
+		&MissingTitleRule{},    // RC-META-001
+		&MissingMetaDescRule{}, // RC-META-002
+		&MissingViewportRule{}, // RC-META-003
+		&TitleQualityRule{},    // RC-META-004
+		&H1StructureRule{},     // RC-META-005
 
 		// --- Content & Images ---
-		&ImageAltRule{},          // RC-IMG-001
-		&ThinContentRule{},       // RC-CONTENT-001
+		&ImageAltRule{},    // RC-IMG-001
+		&ThinContentRule{}, // RC-CONTENT-001
 
 		// --- Canonical ---
 		&MissingCanonicalRule{},  // RC-CANON-001
@@ -51,17 +51,17 @@ func NewRegistry() *Registry {
 		&CanonicalProtocolRule{}, // RC-CANON-003
 
 		// --- Internationalization ---
-		&HreflangValidRule{},     // RC-HREFLANG-001
-		&HTMLLangRule{},          // RC-LANG-001
+		&HreflangValidRule{}, // RC-HREFLANG-001
+		&HTMLLangRule{},      // RC-LANG-001
 
 		// --- Social Metadata ---
-		&OpenGraphRule{},         // RC-SOCIAL-001
+		&OpenGraphRule{}, // RC-SOCIAL-001
 
 		// --- Structured Data ---
 		&StructuredDataValidRule{}, // RC-STRUCT-001
 
 		// --- Renderability ---
-		&RenderDiscrepancyRule{},   // RC-RENDER-001
+		&RenderDiscrepancyRule{}, // RC-RENDER-001
 	)
 
 	return r

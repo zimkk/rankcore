@@ -14,7 +14,7 @@ const thinContentThreshold = 200
 // RC-CONTENT-001: Very short or missing body text on public HTML pages
 type ThinContentRule struct{}
 
-func (r *ThinContentRule) ID() string  { return "RC-CONTENT-001" }
+func (r *ThinContentRule) ID() string   { return "RC-CONTENT-001" }
 func (r *ThinContentRule) Version() int { return 1 }
 
 func (r *ThinContentRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

@@ -3,12 +3,12 @@ package crawl
 import (
 	"context"
 	"fmt"
+	"github.com/zimkk/rankcore/internal/extract"
+	"github.com/zimkk/rankcore/internal/httpx"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
-	"github.com/zimkk/rankcore/internal/extract"
-	"github.com/zimkk/rankcore/internal/httpx"
 )
 
 // Crawler manages the URL frontier and concurrent execution.
@@ -40,7 +40,7 @@ func (c *Crawler) Start(ctx context.Context, seed string) {
 		close(c.Results)
 		return
 	}
-	
+
 	c.BaseHost = parsedSeed.Host
 
 	c.Queue <- seed
@@ -79,7 +79,7 @@ func (c *Crawler) worker(ctx context.Context, client *http.Client, base *url.URL
 			if !ok {
 				return
 			}
-			
+
 			c.mu.Lock()
 			if len(c.Visited) > c.Config.MaxPages {
 				c.mu.Unlock()
@@ -113,7 +113,7 @@ func (c *Crawler) worker(ctx context.Context, client *http.Client, base *url.URL
 
 func (c *Crawler) fetchAndExtract(ctx context.Context, client *http.Client, targetURL string, base *url.URL) *PageSnapshot {
 	resp, err := httpx.Request(ctx, client, targetURL, c.Config.UserAgent)
-	
+
 	snap := &PageSnapshot{
 		URL:      targetURL,
 		FinalURL: targetURL,
@@ -137,7 +137,7 @@ func (c *Crawler) fetchAndExtract(ctx context.Context, client *http.Client, targ
 
 	// Read up to a limit (e.g., 2MB)
 	bodyReader := io.LimitReader(resp.Body, 2*1024*1024)
-	
+
 	// Use our extractor
 	meta, _ := extract.Extract(bodyReader)
 	if meta != nil {

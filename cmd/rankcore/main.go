@@ -155,14 +155,14 @@ func runSetup() {
 // ── doctor ──────────────────────────────────────────────────────────────────
 
 type doctorReport struct {
-	Status         string            `json:"status"`
-	Version        string            `json:"version"`
-	RulesetVersion string            `json:"ruleset_version"`
-	SchemaVersion  int               `json:"schema_version"`
-	RuleCount      int               `json:"rule_count"`
-	Platform       string            `json:"platform"`
-	Agents         []doctorAgent     `json:"agents"`
-	Browser        doctorBrowser     `json:"browser"`
+	Status         string        `json:"status"`
+	Version        string        `json:"version"`
+	RulesetVersion string        `json:"ruleset_version"`
+	SchemaVersion  int           `json:"schema_version"`
+	RuleCount      int           `json:"rule_count"`
+	Platform       string        `json:"platform"`
+	Agents         []doctorAgent `json:"agents"`
+	Browser        doctorBrowser `json:"browser"`
 }
 
 type doctorAgent struct {

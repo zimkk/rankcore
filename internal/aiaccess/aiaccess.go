@@ -8,9 +8,9 @@ import (
 type CrawlerPurpose string
 
 const (
-	PurposeSearch   CrawlerPurpose = "search"
+	PurposeSearch    CrawlerPurpose = "search"
 	PurposeUserFetch CrawlerPurpose = "user_fetch"
-	PurposeTraining CrawlerPurpose = "training"
+	PurposeTraining  CrawlerPurpose = "training"
 )
 
 // CrawlerEntry describes a known AI/search crawler.

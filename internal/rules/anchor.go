@@ -9,23 +9,23 @@ import (
 
 // genericLinkTexts is the set of anchor texts that provide no navigation value.
 var genericLinkTexts = map[string]bool{
-	"click here":  true,
-	"here":        true,
-	"read more":   true,
-	"learn more":  true,
-	"more":        true,
-	"link":        true,
-	"this":        true,
-	"go":          true,
-	"click":       true,
-	"this link":   true,
-	"this page":   true,
+	"click here": true,
+	"here":       true,
+	"read more":  true,
+	"learn more": true,
+	"more":       true,
+	"link":       true,
+	"this":       true,
+	"go":         true,
+	"click":      true,
+	"this link":  true,
+	"this page":  true,
 }
 
 // RC-LINK-002: Links with empty or generic anchor text (Lighthouse: link-text)
 type LinkTextRule struct{}
 
-func (r *LinkTextRule) ID() string  { return "RC-LINK-002" }
+func (r *LinkTextRule) ID() string   { return "RC-LINK-002" }
 func (r *LinkTextRule) Version() int { return 1 }
 
 func (r *LinkTextRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
@@ -69,7 +69,7 @@ func (r *LinkTextRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
 // RC-LINK-003: Uncrawlable anchors (Lighthouse: crawlable-anchors)
 type CrawlableAnchorRule struct{}
 
-func (r *CrawlableAnchorRule) ID() string  { return "RC-LINK-003" }
+func (r *CrawlableAnchorRule) ID() string   { return "RC-LINK-003" }
 func (r *CrawlableAnchorRule) Version() int { return 1 }
 
 func (r *CrawlableAnchorRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

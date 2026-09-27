@@ -13,7 +13,7 @@ var validLangCode = regexp.MustCompile(`^(?i)[a-z]{2,3}(-[a-zA-Z]{2,4})?$`)
 // RC-HREFLANG-001: Invalid hreflang annotations (Lighthouse: hreflang)
 type HreflangValidRule struct{}
 
-func (r *HreflangValidRule) ID() string  { return "RC-HREFLANG-001" }
+func (r *HreflangValidRule) ID() string   { return "RC-HREFLANG-001" }
 func (r *HreflangValidRule) Version() int { return 1 }
 
 func (r *HreflangValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

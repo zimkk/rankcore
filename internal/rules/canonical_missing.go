@@ -10,7 +10,7 @@ import (
 // RC-CANON-001: Missing canonical on pages that should have one (Lighthouse: canonical)
 type MissingCanonicalRule struct{}
 
-func (r *MissingCanonicalRule) ID() string  { return "RC-CANON-001" }
+func (r *MissingCanonicalRule) ID() string   { return "RC-CANON-001" }
 func (r *MissingCanonicalRule) Version() int { return 1 }
 
 func (r *MissingCanonicalRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

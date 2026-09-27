@@ -57,12 +57,12 @@ type VerifyInfo struct {
 
 // VerificationReport is the top-level structure for verifying a previous audit.
 type VerificationReport struct {
-	SchemaVersion   int               `json:"schema_version"`
-	RankCoreVersion string            `json:"rankcore_version"`
-	GeneratedAt     time.Time         `json:"generated_at"`
-	Target          string            `json:"target"`
-	Baseline        string            `json:"baseline"`
-	Results         []VerifyResult    `json:"results"`
+	SchemaVersion   int            `json:"schema_version"`
+	RankCoreVersion string         `json:"rankcore_version"`
+	GeneratedAt     time.Time      `json:"generated_at"`
+	Target          string         `json:"target"`
+	Baseline        string         `json:"baseline"`
+	Results         []VerifyResult `json:"results"`
 }
 
 type VerifyResult struct {

@@ -20,13 +20,13 @@ func (r *TitleQualityRule) Version() int {
 }
 
 var genericTitles = map[string]bool{
-	"home":       true,
-	"homepage":   true,
-	"untitled":   true,
-	"welcome":    true,
-	"index":      true,
-	"page":       true,
-	"document":   true,
+	"home":     true,
+	"homepage": true,
+	"untitled": true,
+	"welcome":  true,
+	"index":    true,
+	"page":     true,
+	"document": true,
 }
 
 func (r *TitleQualityRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {

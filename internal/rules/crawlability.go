@@ -8,7 +8,7 @@ import (
 // RC-HTTP-003: Page doesn't return HTTP 200 for intended public pages (Lighthouse: http-status-code)
 type HTTPSuccessRule struct{}
 
-func (r *HTTPSuccessRule) ID() string  { return "RC-HTTP-003" }
+func (r *HTTPSuccessRule) ID() string   { return "RC-HTTP-003" }
 func (r *HTTPSuccessRule) Version() int { return 1 }
 
 func (r *HTTPSuccessRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
@@ -44,7 +44,7 @@ func (r *HTTPSuccessRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding
 // RC-HTTP-004: Page blocked from Googlebot by robots.txt (Lighthouse: is-crawlable)
 type RobotsCrawlableRule struct{}
 
-func (r *RobotsCrawlableRule) ID() string  { return "RC-HTTP-004" }
+func (r *RobotsCrawlableRule) ID() string   { return "RC-HTTP-004" }
 func (r *RobotsCrawlableRule) Version() int { return 1 }
 
 func (r *RobotsCrawlableRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
