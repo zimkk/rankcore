@@ -129,9 +129,9 @@ func TestLinkTextRule(t *testing.T) {
 	t.Run("fires on generic anchor text", func(t *testing.T) {
 		snap := &crawl.PageSnapshot{
 			URL: "https://example.com", StatusCode: 200,
-			AnchorTexts: map[string]string{
-				"/about":   "click here",
-				"/pricing": "Learn about our pricing",
+			Links: []crawl.LinkInfo{
+				{Raw: "/about", Text: "click here", HasHref: true},
+				{Raw: "/pricing", Text: "Learn about our pricing", HasHref: true},
 			},
 		}
 		f := rule.Evaluate(snap)
@@ -143,8 +143,8 @@ func TestLinkTextRule(t *testing.T) {
 	t.Run("fires on empty anchor text", func(t *testing.T) {
 		snap := &crawl.PageSnapshot{
 			URL: "https://example.com", StatusCode: 200,
-			AnchorTexts: map[string]string{
-				"/contact": "",
+			Links: []crawl.LinkInfo{
+				{Raw: "/contact", Text: "", HasHref: true},
 			},
 		}
 		if rule.Evaluate(snap) == nil {
@@ -155,9 +155,9 @@ func TestLinkTextRule(t *testing.T) {
 	t.Run("passes with descriptive text", func(t *testing.T) {
 		snap := &crawl.PageSnapshot{
 			URL: "https://example.com", StatusCode: 200,
-			AnchorTexts: map[string]string{
-				"/about":   "About our company",
-				"/pricing": "View pricing plans",
+			Links: []crawl.LinkInfo{
+				{Raw: "/about", Text: "About our company", HasHref: true},
+				{Raw: "/pricing", Text: "View pricing plans", HasHref: true},
 			},
 		}
 		if rule.Evaluate(snap) != nil {
@@ -362,7 +362,7 @@ func TestThinContentRule(t *testing.T) {
 	t.Run("fires on very short text", func(t *testing.T) {
 		snap := &crawl.PageSnapshot{
 			URL: "https://example.com", StatusCode: 200,
-			ContentType: "text/html", TextLength: 50,
+			ContentType: "text/html", WordCount: 50,
 		}
 		if rule.Evaluate(snap) == nil {
 			t.Error("expected finding for thin content")
@@ -372,7 +372,7 @@ func TestThinContentRule(t *testing.T) {
 	t.Run("passes with enough text", func(t *testing.T) {
 		snap := &crawl.PageSnapshot{
 			URL: "https://example.com", StatusCode: 200,
-			ContentType: "text/html", TextLength: 500,
+			ContentType: "text/html", WordCount: 500,
 		}
 		if rule.Evaluate(snap) != nil {
 			t.Error("should pass with sufficient text")

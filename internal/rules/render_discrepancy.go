@@ -20,7 +20,7 @@ func (r *RenderDiscrepancyRule) Version() int {
 }
 
 func (r *RenderDiscrepancyRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.Rendered == nil || snapshot.StatusCode != 200 {
+	if snapshot.Rendered == nil || !isHTMLOK(snapshot) {
 		return nil
 	}
 

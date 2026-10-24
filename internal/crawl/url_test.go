@@ -15,6 +15,13 @@ func TestNormalizeURL(t *testing.T) {
 		{"https://example.com/path#fragment", "https://example.com/path"},
 		{"HTTP://EXAMPLE.COM/Path", "http://example.com/Path"},
 		{"/relative/path", "https://example.com/relative/path"},
+		{"https://example.com:443/a", "https://example.com/a"},
+		{"http://example.com:80/a", "http://example.com/a"},
+		{"http://example.com:8080/a", "http://example.com:8080/a"},
+		{"https://example.com", "https://example.com/"},
+		{"https://user:pw@example.com/a", "https://example.com/a"},
+		{"relative", "https://example.com/relative"},
+		{"//cdn.example.org/x.js", "https://cdn.example.org/x.js"},
 	}
 
 	for _, tc := range tests {

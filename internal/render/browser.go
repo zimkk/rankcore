@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -36,6 +37,8 @@ func FindChromium() string {
 		}
 	case "linux":
 		candidates = []string{
+			"/usr/bin/microsoft-edge",
+			"/usr/bin/brave-browser",
 			"/usr/bin/google-chrome",
 			"/usr/bin/google-chrome-stable",
 			"/usr/bin/chromium",
@@ -52,6 +55,8 @@ func FindChromium() string {
 			localAppData + `\Google\Chrome\Application\chrome.exe`,
 			programFiles + `\Microsoft\Edge\Application\msedge.exe`,
 			programFilesX86 + `\Microsoft\Edge\Application\msedge.exe`,
+			programFiles + `\BraveSoftware\Brave-Browser\Application\brave.exe`,
+			localAppData + `\BraveSoftware\Brave-Browser\Application\brave.exe`,
 		}
 	}
 
@@ -64,7 +69,7 @@ func FindChromium() string {
 	}
 
 	// Try PATH lookups
-	pathCandidates := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "msedge"}
+	pathCandidates := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "msedge", "brave", "brave-browser", "microsoft-edge"}
 	for _, name := range pathCandidates {
 		if path, err := exec.LookPath(name); err == nil {
 			return path
@@ -96,12 +101,25 @@ func (r *Renderer) Render(ctx context.Context, pageURL string) (*crawl.RenderedS
 	renderCtx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 
+	// A throwaway profile keeps the run isolated from (and unblocked by) the
+	// user's open browser, and leaves no state behind.
+	profile, err := os.MkdirTemp("", "rankcore-chrome-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(profile)
+
 	// Use modern headless Chromium with --dump-dom
 	args := []string{
 		"--headless=new",
 		"--disable-gpu",
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-extensions",
+		"--user-data-dir=" + profile,
+		"--virtual-time-budget=5000",
 		"--dump-dom",
 		pageURL,
 	}
@@ -124,11 +142,25 @@ func (r *Renderer) Render(ctx context.Context, pageURL string) (*crawl.RenderedS
 		return nil, fmt.Errorf("failed to parse rendered DOM: %w", err)
 	}
 
+	var links []string
+	if base, err := url.Parse(pageURL); err == nil {
+		for _, l := range meta.Links {
+			if !l.HasHref {
+				continue
+			}
+			if abs, err := crawl.NormalizeURL(l.Href, base); err == nil {
+				if u, err := url.Parse(abs); err == nil && crawl.IsSameOrigin(u, base) {
+					links = append(links, abs)
+				}
+			}
+		}
+	}
+
 	return &crawl.RenderedSnapshot{
 		Title:         meta.Title,
 		Canonical:     meta.Canonical,
 		RobotsMeta:    meta.RobotsMeta,
-		InternalLinks: meta.InternalLinks,
+		InternalLinks: links,
 		TextLength:    meta.TextLength,
 	}, nil
 }

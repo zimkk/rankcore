@@ -11,6 +11,8 @@ Use for `/rank verify`.
 rankcore verify <target> --baseline <audit.json> --out <dir> --json
 ```
 
+   Exit code `0` means no regressions, no new findings and no critical issue left; `2` means something regressed, appeared, or a critical issue remains; `1` is an operational error. Findings match by rule ID and URL path, so a dev server restarted on a different port still compares correctly.
+
 5. Compare by rule ID, URL/entity, and verification condition.
 6. Classify:
    - fixed;

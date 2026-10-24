@@ -2,6 +2,8 @@ package rules
 
 import (
 	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/zimkk/rankcore/internal/crawl"
 	"github.com/zimkk/rankcore/internal/report"
@@ -14,10 +16,10 @@ var validLangCode = regexp.MustCompile(`^(?i)[a-z]{2,3}(-[a-zA-Z]{2,4})?$`)
 type HreflangValidRule struct{}
 
 func (r *HreflangValidRule) ID() string   { return "RC-HREFLANG-001" }
-func (r *HreflangValidRule) Version() int { return 1 }
+func (r *HreflangValidRule) Version() int { return 2 }
 
 func (r *HreflangValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	if len(snapshot.Hreflang) == 0 {
@@ -27,22 +29,29 @@ func (r *HreflangValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Findi
 	var invalid []string
 	for lang, href := range snapshot.Hreflang {
 		// x-default is a special valid value
-		if lang == "x-default" {
+		if strings.EqualFold(lang, "x-default") {
+			if href != "" && !isAbsoluteURL(href) {
+				invalid = append(invalid, lang+" (relative href: "+href+")")
+			}
 			continue
 		}
 		if !validLangCode.MatchString(lang) {
 			invalid = append(invalid, lang)
 			continue
 		}
-		// Flag empty hrefs
-		if href == "" {
+		switch {
+		case href == "":
 			invalid = append(invalid, lang+" (empty href)")
+		case !isAbsoluteURL(href):
+			invalid = append(invalid, lang+" (relative href: "+href+")")
 		}
 	}
 
 	if len(invalid) == 0 {
 		return nil
 	}
+
+	sort.Strings(invalid)
 
 	return &report.Finding{
 		ID:          r.ID(),

@@ -4,43 +4,43 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/zimkk/rankcore/internal/aiaccess"
 	"github.com/zimkk/rankcore/internal/crawl"
-	"github.com/zimkk/rankcore/internal/graph"
 	"github.com/zimkk/rankcore/internal/httpx"
 	"github.com/zimkk/rankcore/internal/render"
 	"github.com/zimkk/rankcore/internal/report"
 	"github.com/zimkk/rankcore/internal/robots"
 	"github.com/zimkk/rankcore/internal/rules"
-)
-
-// Version constants
-const (
-	RankCoreVersion = "1.0.0"
-	RulesetVersion  = "2026.09"
-	SchemaVersion   = 1
+	"github.com/zimkk/rankcore/internal/sitemap"
+	"github.com/zimkk/rankcore/internal/version"
 )
 
 // Options configures an audit run.
 type Options struct {
-	Target      string
-	RenderMode  string
-	Browser     string
-	MaxPages    int
-	Concurrency int
-	Include     string
-	Exclude     string
-	OutDir      string
-	Format      string
-	UserAgent   string
-	Timeout     time.Duration
+	Target       string
+	RenderMode   string
+	Browser      string
+	MaxPages     int
+	MaxDepth     int
+	MaxRender    int
+	Concurrency  int
+	Include      string
+	Exclude      string
+	OutDir       string
+	Format       string
+	UserAgent    string
+	Timeout      time.Duration
+	IgnoreRobots bool // fetch URLs even if robots.txt disallows RankCoreBot
+	NoSitemap    bool
 }
 
 // DefaultOptions returns sensible defaults.
@@ -48,42 +48,42 @@ func DefaultOptions() Options {
 	return Options{
 		RenderMode:  "off",
 		MaxPages:    500,
+		MaxDepth:    10,
+		MaxRender:   15,
 		Concurrency: 5,
 		OutDir:      ".rankcore/runs/latest",
 		Format:      "json",
-		UserAgent:   "RankCoreBot/1.0 (+https://github.com/zimkk/rankcore)",
+		UserAgent:   version.UserAgent(),
 		Timeout:     20 * time.Second,
 	}
 }
 
+const (
+	maxSitemapFiles = 50
+	maxSitemapBytes = 50 * 1024 * 1024
+)
+
 // Run executes a full deterministic audit against the target.
 func Run(ctx context.Context, opts Options) (*report.AuditReport, error) {
-	parsedTarget, err := url.Parse(opts.Target)
+	var limitations []string
+
+	target, cleanup, note, err := resolveTarget(opts.Target)
 	if err != nil {
-		return nil, fmt.Errorf("invalid target URL: %w", err)
+		return nil, err
+	}
+	defer cleanup()
+	if note != "" {
+		limitations = append(limitations, note)
 	}
 
-	allowPrivate := parsedTarget.Hostname() == "localhost" || parsedTarget.Hostname() == "127.0.0.1"
-
-	// 1. Fetch and parse robots.txt
-	robotsTxt := fetchRobotsTxt(ctx, parsedTarget, opts.UserAgent, opts.Timeout, allowPrivate)
-
-	// 2. Evaluate AI crawler access
-	crawlerAccess := evaluateCrawlerAccess(robotsTxt)
-
-	// 3. Configure and run the crawler
-	cfg := crawl.Config{
-		RenderMode:     crawl.RenderMode(opts.RenderMode),
-		MaxPages:       opts.MaxPages,
-		MaxDepth:       10,
-		Concurrency:    opts.Concurrency,
-		IncludePattern: opts.Include,
-		ExcludePattern: opts.Exclude,
-		OutDir:         opts.OutDir,
-		OutputFormat:   opts.Format,
-		UserAgent:      opts.UserAgent,
-		Timeout:        opts.Timeout,
+	seed, err := crawl.NormalizeURL(target, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target URL %q: %w", opts.Target, err)
 	}
+	seedURL, _ := url.Parse(seed)
+	local := httpx.IsLocalTarget(seedURL)
+	origin := seedURL.Scheme + "://" + seedURL.Host
+	client := httpx.NewSafeClient(opts.Timeout, local)
 
 	renderer := render.NewRenderer(opts.Browser)
 	if strings.EqualFold(opts.RenderMode, "required") && !renderer.Available {
@@ -91,124 +91,201 @@ func Run(ctx context.Context, opts Options) (*report.AuditReport, error) {
 	}
 	shouldRender := renderer.Available && !strings.EqualFold(opts.RenderMode, "off")
 
-	crawler := crawl.NewCrawler(cfg)
-
-	linkGraph := graph.New()
-	registry := rules.NewRegistry()
-
-	var snapshots []*crawl.PageSnapshot
-	var allFindings []report.Finding
-
-	// Start crawling
-	go crawler.Start(ctx, opts.Target)
-
-	// Collect results
-	for snap := range crawler.Results {
-		if snap == nil {
-			continue
-		}
-
-		// Mark blocked-by-robots before rule evaluation
-		if robotsTxt != nil && !allowPrivate {
-			p := parsedTarget.Path
-			if snapParsed, err := url.Parse(snap.URL); err == nil {
-				p = snapParsed.Path
-			}
-			if robotsTxt.IsDisallowed("Googlebot", p) {
-				snap.BlockedByRobots = true
-				snap.RobotsRule = robotsTxt.MatchedRule("Googlebot", p)
-			}
-		}
-
-		// Render DOM if browser is available and enabled
-		if shouldRender && snap.StatusCode == 200 && len(snap.RedirectChain) == 0 && len(snapshots) < 15 {
-			if rSnap, err := renderer.Render(ctx, snap.URL); err == nil {
-				snap.Rendered = rSnap
-			}
-		}
-
-		snapshots = append(snapshots, snap)
-
-		// Build link graph
-		linkGraph.AddPage(snap.URL, snap.InternalLinks)
-
-		// Evaluate rules
-		findings := registry.EvaluateAll(snap)
-		allFindings = append(allFindings, findings...)
+	// 1. robots.txt
+	robotsURL := origin + "/robots.txt"
+	robotsTxt, robotsNote := fetchRobotsTxt(ctx, client, robotsURL, opts.UserAgent)
+	if robotsNote != "" {
+		limitations = append(limitations, robotsNote)
 	}
 
-	// Post-crawl: check for orphan pages
-	orphans := linkGraph.Orphans(opts.Target)
-	for _, orphanURL := range orphans {
-		allFindings = append(allFindings, report.Finding{
-			ID:          "RC-GRAPH-001",
-			RuleVersion: 1,
-			Category:    "discovery",
-			Severity:    "medium",
-			Confidence:  0.8,
-			URL:         orphanURL,
-			Summary:     "Page has no inbound internal links from other crawled pages",
-			Remediation: "Add internal links from related pages to improve discoverability.",
-			Evidence: map[string]interface{}{
-				"inbound_count": 0,
-			},
+	// 2. Sitemaps
+	var sitemaps []report.SitemapInfo
+	sitemapURLs := map[string]string{}
+	if !opts.NoSitemap {
+		sitemaps, sitemapURLs = discoverSitemaps(ctx, client, origin, robotsTxt, opts.UserAgent, opts.MaxPages)
+	}
+
+	// 3. Crawl: the seed first, then every same-origin sitemap URL.
+	seeds := []crawl.Seed{{URL: seed, Source: "seed"}}
+	smList := make([]string, 0, len(sitemapURLs))
+	for u := range sitemapURLs {
+		smList = append(smList, u)
+	}
+	sort.Strings(smList)
+	for _, u := range smList {
+		seeds = append(seeds, crawl.Seed{URL: u, Source: "sitemap"})
+	}
+
+	cfg := crawl.DefaultConfig()
+	cfg.RenderMode = crawl.RenderMode(opts.RenderMode)
+	cfg.MaxPages = opts.MaxPages
+	cfg.MaxDepth = opts.MaxDepth
+	cfg.Concurrency = opts.Concurrency
+	cfg.IncludePattern = opts.Include
+	cfg.ExcludePattern = opts.Exclude
+	cfg.UserAgent = opts.UserAgent
+	cfg.Timeout = opts.Timeout
+	cfg.AllowPrivate = local
+	// Local dev servers belong to the user; remote sites get robots etiquette.
+	cfg.RespectRobots = !local && !opts.IgnoreRobots
+
+	crawler := crawl.NewCrawler(cfg)
+	crawler.Robots = robotsTxt
+	pages, err := crawler.Run(ctx, seeds)
+	if err != nil {
+		return nil, fmt.Errorf("crawl interrupted: %w", err)
+	}
+	for _, p := range pages {
+		if _, ok := sitemapURLs[p.URL]; ok {
+			p.InSitemap = true
+		}
+	}
+
+	// 4. Optional rendering of the shallowest HTML pages.
+	rendered := 0
+	if shouldRender {
+		byDepth := append([]*crawl.PageSnapshot(nil), pages...)
+		sort.SliceStable(byDepth, func(i, j int) bool { return byDepth[i].Depth < byDepth[j].Depth })
+		for _, p := range byDepth {
+			if rendered >= opts.MaxRender || ctx.Err() != nil {
+				break
+			}
+			if p.StatusCode != 200 || !p.IsHTML() || len(p.RedirectChain) > 0 {
+				continue
+			}
+			if rs, err := renderer.Render(ctx, p.URL); err == nil {
+				p.Rendered = rs
+				rendered++
+			}
+		}
+		if htmlPages := countHTML(pages); htmlPages > rendered {
+			limitations = append(limitations, fmt.Sprintf("Rendered DOM was compared on %d of %d HTML pages (--max-render).", rendered, htmlPages))
+		}
+	}
+
+	// 5. Rules
+	site := rules.NewSite(seed, pages)
+	site.Robots = robotsTxt
+	site.RobotsURL = robotsURL
+	site.Sitemaps = sitemaps
+	site.SitemapURLs = sitemapURLs
+	var access *aiaccess.Report
+	if robotsTxt != nil {
+		access = aiaccess.Evaluate(robotsTxt, "/")
+		site.CrawlerAccess = access.Results
+	}
+	rules.MarkRobotsBlocked(site)
+	findings := rules.NewRegistry().EvaluateSite(site)
+
+	// 6. Report
+	analyzed, skipped := 0, 0
+	summaries := make([]report.PageSummary, 0, len(pages))
+	for _, p := range pages {
+		if p.StatusCode > 0 {
+			analyzed++
+		} else {
+			skipped++
+		}
+		summaries = append(summaries, report.PageSummary{
+			URL: p.URL, FinalURL: p.FinalURL, StatusCode: p.StatusCode, Depth: p.Depth, Source: p.Source,
+			InSitemap: p.InSitemap, Indexable: p.Indexable(), DurationMS: p.DurationMS, Bytes: p.BodyBytes,
+			Skipped: p.Skipped, Error: p.FetchError,
 		})
 	}
 
-	// Post-crawl: check for excessive depth
-	depths := linkGraph.Depth(opts.Target)
-	for pageURL, depth := range depths {
-		if depth > 5 {
-			allFindings = append(allFindings, report.Finding{
-				ID:          "RC-GRAPH-002",
-				RuleVersion: 1,
-				Category:    "discovery",
-				Severity:    "low",
-				Confidence:  0.7,
-				URL:         pageURL,
-				Summary:     "Page is excessively deep in the site architecture",
-				Remediation: "Consider adding navigation shortcuts or restructuring to reduce click depth.",
-				Evidence: map[string]interface{}{
-					"depth": depth,
-				},
-			})
+	if strings.EqualFold(opts.RenderMode, "off") {
+		limitations = append(limitations, "Rendered DOM was not evaluated (render mode: off). JS-only content may be missed.")
+	} else if !renderer.Available {
+		limitations = append(limitations, "No Chromium-family browser found; rendered DOM was not evaluated.")
+	}
+	if cfg.RespectRobots && robotsTxt != nil {
+		n := 0
+		for _, p := range pages {
+			if p.Skipped == "robots" {
+				n++
+			}
+		}
+		if n > 0 {
+			limitations = append(limitations, fmt.Sprintf("%d URL(s) were not fetched because robots.txt disallows RankCoreBot (use --ignore-robots for your own site).", n))
 		}
 	}
-
-	// Build the audit report
-	pagesAnalyzed := 0
-	for _, snap := range snapshots {
-		if snap.StatusCode > 0 {
-			pagesAnalyzed++
-		}
+	if crawler.LimitReached() {
+		limitations = append(limitations, fmt.Sprintf("Crawl stopped at --max-pages=%d; some URLs were not audited.", opts.MaxPages))
 	}
 
-	auditReport := &report.AuditReport{
-		SchemaVersion:   SchemaVersion,
-		RankCoreVersion: RankCoreVersion,
-		RulesetVersion:  RulesetVersion,
+	return &report.AuditReport{
+		SchemaVersion:   version.SchemaVersion,
+		RankCoreVersion: version.Version,
+		RulesetVersion:  version.RulesetVersion,
 		GeneratedAt:     time.Now().UTC(),
 		Target:          opts.Target,
+		Origin:          origin,
 		Mode: report.Mode{
 			HTTP:     true,
-			Rendered: shouldRender,
+			Rendered: shouldRender && rendered > 0,
 			Browser:  renderer.BrowserPath,
 		},
 		Coverage: report.Coverage{
-			PagesRequested: len(snapshots),
-			PagesAnalyzed:  pagesAnalyzed,
-			PagesSkipped:   len(snapshots) - pagesAnalyzed,
-			LimitReached:   len(snapshots) >= opts.MaxPages,
+			PagesRequested: len(pages),
+			PagesAnalyzed:  analyzed,
+			PagesSkipped:   skipped,
+			LimitReached:   crawler.LimitReached(),
 		},
-		Findings:      allFindings,
-		CrawlerAccess: crawlerAccess,
-		Limitations:   buildLimitations(opts, robotsTxt),
-	}
-
-	return auditReport, nil
+		Findings:      nonNil(findings),
+		CrawlerAccess: crawlerAccess(access),
+		Sitemaps:      sitemaps,
+		Pages:         summaries,
+		Limitations:   limitations,
+	}, nil
 }
 
-// SaveReport writes the audit report to disk.
+func nonNil(f []report.Finding) []report.Finding {
+	if f == nil {
+		return []report.Finding{}
+	}
+	return f
+}
+
+func countHTML(pages []*crawl.PageSnapshot) int {
+	n := 0
+	for _, p := range pages {
+		if p.StatusCode == 200 && p.IsHTML() {
+			n++
+		}
+	}
+	return n
+}
+
+// resolveTarget turns the user's target into a crawlable URL. A bare host gets
+// https://; an existing local directory is served on a loopback port.
+func resolveTarget(target string) (string, func(), string, error) {
+	noop := func() {}
+	if fi, err := os.Stat(target); err == nil && fi.IsDir() {
+		abs, _ := filepath.Abs(target)
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return "", noop, "", fmt.Errorf("could not serve %s: %w", abs, err)
+		}
+		srv := &http.Server{Handler: http.FileServer(http.Dir(abs)), ReadHeaderTimeout: 10 * time.Second}
+		go srv.Serve(ln)
+		return "http://" + ln.Addr().String() + "/", func() { srv.Close() },
+			"Served local directory " + abs + " with a static file server; server-side redirects, headers and rewrites of the real host are not reproduced.", nil
+	}
+	if !strings.Contains(target, "://") {
+		if strings.HasPrefix(target, "localhost") || strings.HasPrefix(target, "127.") {
+			target = "http://" + target
+		} else {
+			target = "https://" + target
+		}
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", noop, "", fmt.Errorf("invalid target %q: expected an http(s) URL or a local directory", target)
+	}
+	return target, noop, "", nil
+}
+
+// SaveReport writes audit.json, plus audit.md unless format is "json-only".
 func SaveReport(auditReport *report.AuditReport, outDir, format string) error {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -224,8 +301,7 @@ func SaveReport(auditReport *report.AuditReport, outDir, format string) error {
 		return fmt.Errorf("failed to write report: %w", err)
 	}
 
-	// Also write a human-readable summary
-	if format == "md" || format == "both" || format == "all" || format == "text" || format == "json" || format == "" {
+	if format != "json-only" {
 		summary := buildMarkdownSummary(auditReport)
 		mdPath := filepath.Join(outDir, "audit.md")
 		if err := os.WriteFile(mdPath, []byte(summary), 0644); err != nil {
@@ -236,110 +312,200 @@ func SaveReport(auditReport *report.AuditReport, outDir, format string) error {
 	return nil
 }
 
-func fetchRobotsTxt(ctx context.Context, target *url.URL, userAgent string, timeout time.Duration, allowPrivate bool) *robots.RobotsTxt {
-	robotsURL := fmt.Sprintf("%s://%s/robots.txt", target.Scheme, target.Host)
-	client := httpx.NewSafeClient(timeout, userAgent, allowPrivate)
-
-	resp, err := httpx.Request(ctx, client, robotsURL, userAgent)
-	if err != nil {
-		return nil
+func fetchRobotsTxt(ctx context.Context, client *http.Client, robotsURL, userAgent string) (*robots.RobotsTxt, string) {
+	res := httpx.Fetch(ctx, client, robotsURL, userAgent, 512*1024)
+	switch {
+	case res.Err != nil && res.StatusCode == 0:
+		return nil, "Could not fetch robots.txt (" + res.Err.Error() + "). Crawler access policies may be incomplete."
+	case res.StatusCode == http.StatusOK:
+		return robots.Parse(strings.NewReader(string(res.Body))), ""
+	case res.StatusCode >= 500:
+		// RFC 9309 §2.3.1.4: an unreachable robots.txt means "assume complete disallow".
+		return robots.Parse(strings.NewReader("User-agent: *\nDisallow: /\n")),
+			fmt.Sprintf("robots.txt returned %d; per RFC 9309 crawlers treat the whole site as disallowed.", res.StatusCode)
+	default:
+		// 4xx: no restrictions.
+		return nil, fmt.Sprintf("robots.txt returned %d; crawlers treat the site as fully allowed.", res.StatusCode)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil
-	}
-
-	return robots.Parse(resp.Body)
 }
 
-func evaluateCrawlerAccess(rt *robots.RobotsTxt) map[string]report.Policy {
-	if rt == nil {
-		return map[string]report.Policy{
-			"note": {Status: "no_robots_txt"},
+// discoverSitemaps reads sitemaps from robots.txt (or /sitemap.xml), following
+// sitemap indexes, and returns same-origin page URLs mapped to their sitemap.
+func discoverSitemaps(ctx context.Context, client *http.Client, origin string, rt *robots.RobotsTxt, userAgent string, maxURLs int) ([]report.SitemapInfo, map[string]string) {
+	type item struct{ url, source string }
+	var queue []item
+	if rt != nil {
+		for _, s := range rt.Sitemaps {
+			queue = append(queue, item{strings.TrimSpace(s), "robots.txt"})
 		}
 	}
+	if len(queue) == 0 {
+		queue = append(queue, item{origin + "/sitemap.xml", "default"})
+	}
 
-	accessReport := aiaccess.Evaluate(rt, "/")
-	policies := make(map[string]report.Policy)
-	for _, result := range accessReport.Results {
+	originURL, _ := url.Parse(origin)
+	seen := map[string]bool{}
+	pages := map[string]string{}
+	var infos []report.SitemapInfo
+
+	for len(queue) > 0 && len(infos) < maxSitemapFiles && ctx.Err() == nil {
+		it := queue[0]
+		queue = queue[1:]
+		if seen[it.url] {
+			continue
+		}
+		seen[it.url] = true
+
+		info := report.SitemapInfo{URL: it.url, Source: it.source}
+		res := httpx.Fetch(ctx, client, it.url, userAgent, maxSitemapBytes)
+		info.StatusCode = res.StatusCode
+		switch {
+		case res.Err != nil && res.StatusCode == 0:
+			info.Error = res.Err.Error()
+		case res.StatusCode != 200:
+			info.Error = fmt.Sprintf("HTTP %d", res.StatusCode)
+		default:
+			parsed, err := sitemap.Parse(strings.NewReader(string(res.Body)))
+			if err != nil {
+				info.Error = err.Error()
+				break
+			}
+			if parsed.IsIndex {
+				info.IsIndex = true
+				info.URLCount = len(parsed.Sitemaps)
+				for _, s := range parsed.Sitemaps {
+					queue = append(queue, item{strings.TrimSpace(s.Loc), "index"})
+				}
+				break
+			}
+			info.URLCount = len(parsed.URLs)
+			for _, u := range parsed.URLs {
+				norm, err := crawl.NormalizeURL(strings.TrimSpace(u.Loc), nil)
+				if err != nil {
+					continue
+				}
+				pu, err := url.Parse(norm)
+				if err != nil || !crawl.IsSameOrigin(pu, originURL) {
+					continue
+				}
+				if _, ok := pages[norm]; !ok && len(pages) < maxURLs {
+					pages[norm] = it.url
+				}
+			}
+		}
+		infos = append(infos, info)
+	}
+	return infos, pages
+}
+
+// crawlerAccess converts the AI crawler evaluation into the report map.
+func crawlerAccess(rep *aiaccess.Report) map[string]report.Policy {
+	if rep == nil {
+		return map[string]report.Policy{"note": {Status: "no_robots_txt"}}
+	}
+	policies := make(map[string]report.Policy, len(rep.Results))
+	for _, result := range rep.Results {
 		status := "allowed"
 		if !result.Allowed {
 			status = "blocked"
 		}
 		key := fmt.Sprintf("%s (%s)", result.Crawler.Name, result.Crawler.Purpose)
-		policies[key] = report.Policy{Status: status}
+		policies[key] = report.Policy{
+			Status:      status,
+			Operator:    result.Crawler.Operator,
+			Purpose:     string(result.Crawler.Purpose),
+			MatchedRule: result.Rule,
+		}
 	}
 	return policies
-}
-
-func buildLimitations(opts Options, rt *robots.RobotsTxt) []string {
-	var limitations []string
-	if strings.EqualFold(opts.RenderMode, "off") {
-		limitations = append(limitations, "Rendered DOM was not evaluated (render mode: off). JS-only content may be missed.")
-	}
-	if rt == nil {
-		limitations = append(limitations, "Could not fetch robots.txt. Crawler access policies may be incomplete.")
-	}
-	return limitations
 }
 
 func buildMarkdownSummary(r *report.AuditReport) string {
 	var b strings.Builder
 	b.WriteString("# RankCore Audit Report\n\n")
-	b.WriteString(fmt.Sprintf("**Target:** %s\n", r.Target))
-	b.WriteString(fmt.Sprintf("**Generated:** %s\n", r.GeneratedAt.Format(time.RFC3339)))
-	b.WriteString(fmt.Sprintf("**RankCore:** %s | **Ruleset:** %s\n\n", r.RankCoreVersion, r.RulesetVersion))
+	fmt.Fprintf(&b, "**Target:** %s  \n", r.Target)
+	fmt.Fprintf(&b, "**Generated:** %s  \n", r.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(&b, "**RankCore:** %s | **Ruleset:** %s\n\n", r.RankCoreVersion, r.RulesetVersion)
 
 	b.WriteString("## Coverage\n\n")
-	b.WriteString(fmt.Sprintf("- Pages requested: %d\n", r.Coverage.PagesRequested))
-	b.WriteString(fmt.Sprintf("- Pages analyzed: %d\n", r.Coverage.PagesAnalyzed))
-	b.WriteString(fmt.Sprintf("- Pages skipped: %d\n", r.Coverage.PagesSkipped))
-	b.WriteString(fmt.Sprintf("- Limit reached: %v\n\n", r.Coverage.LimitReached))
+	fmt.Fprintf(&b, "- Pages requested: %d\n", r.Coverage.PagesRequested)
+	fmt.Fprintf(&b, "- Pages analyzed: %d\n", r.Coverage.PagesAnalyzed)
+	fmt.Fprintf(&b, "- Pages skipped: %d\n", r.Coverage.PagesSkipped)
+	fmt.Fprintf(&b, "- Limit reached: %v\n\n", r.Coverage.LimitReached)
 
-	// Count by severity
 	counts := map[string]int{}
+	byRule := map[string]int{}
 	for _, f := range r.Findings {
 		counts[f.Severity]++
+		byRule[f.ID]++
 	}
 	b.WriteString("## Findings Summary\n\n")
-	b.WriteString(fmt.Sprintf("| Severity | Count |\n|----------|-------|\n"))
+	b.WriteString("| Severity | Count |\n|----------|-------|\n")
 	for _, sev := range []string{"critical", "high", "medium", "low"} {
 		if c, ok := counts[sev]; ok {
-			b.WriteString(fmt.Sprintf("| %s | %d |\n", sev, c))
+			fmt.Fprintf(&b, "| %s | %d |\n", sev, c)
 		}
 	}
-	b.WriteString(fmt.Sprintf("\n**Total findings:** %d\n\n", len(r.Findings)))
+	fmt.Fprintf(&b, "\n**Total findings:** %d\n\n", len(r.Findings))
 
-	// Findings detail
+	if len(byRule) > 0 {
+		ids := make([]string, 0, len(byRule))
+		for id := range byRule {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		b.WriteString("| Rule | Name | Pages |\n|------|------|-------|\n")
+		for _, id := range ids {
+			fmt.Fprintf(&b, "| %s | %s | %d |\n", id, rules.Name(id), byRule[id])
+		}
+		b.WriteString("\n")
+	}
+
 	if len(r.Findings) > 0 {
 		b.WriteString("## Findings\n\n")
 		for _, f := range r.Findings {
-			b.WriteString(fmt.Sprintf("### %s — %s\n\n", f.ID, f.Summary))
-			b.WriteString(fmt.Sprintf("- **URL:** %s\n", f.URL))
-			b.WriteString(fmt.Sprintf("- **Severity:** %s\n", f.Severity))
-			b.WriteString(fmt.Sprintf("- **Category:** %s\n", f.Category))
+			fmt.Fprintf(&b, "### %s — %s\n\n", f.ID, f.Summary)
+			fmt.Fprintf(&b, "- **URL:** %s\n", f.URL)
+			fmt.Fprintf(&b, "- **Severity:** %s · **Category:** %s · **Automation:** %s\n", f.Severity, f.Category, f.Automation)
 			if f.Remediation != "" {
-				b.WriteString(fmt.Sprintf("- **Fix:** %s\n", f.Remediation))
+				fmt.Fprintf(&b, "- **Fix:** %s\n", f.Remediation)
 			}
 			b.WriteString("\n")
 		}
 	}
 
-	// Crawler access
-	if len(r.CrawlerAccess) > 0 {
-		b.WriteString("## Crawler Access\n\n")
-		for name, policy := range r.CrawlerAccess {
-			b.WriteString(fmt.Sprintf("- **%s:** %s\n", name, policy.Status))
+	if len(r.Sitemaps) > 0 {
+		b.WriteString("## Sitemaps\n\n")
+		for _, s := range r.Sitemaps {
+			status := fmt.Sprintf("%d URLs", s.URLCount)
+			if s.IsIndex {
+				status = fmt.Sprintf("index of %d sitemaps", s.URLCount)
+			}
+			if s.Error != "" {
+				status = "error: " + s.Error
+			}
+			fmt.Fprintf(&b, "- %s (%s) — %s\n", s.URL, s.Source, status)
 		}
 		b.WriteString("\n")
 	}
 
-	// Limitations
+	if len(r.CrawlerAccess) > 0 {
+		b.WriteString("## Crawler Access\n\n")
+		names := make([]string, 0, len(r.CrawlerAccess))
+		for name := range r.CrawlerAccess {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Fprintf(&b, "- **%s:** %s\n", name, r.CrawlerAccess[name].Status)
+		}
+		b.WriteString("\n_Blocking training crawlers is a publisher choice and is never reported as an SEO issue._\n\n")
+	}
+
 	if len(r.Limitations) > 0 {
 		b.WriteString("## Limitations\n\n")
 		for _, l := range r.Limitations {
-			b.WriteString(fmt.Sprintf("- %s\n", l))
+			fmt.Fprintf(&b, "- %s\n", l)
 		}
 	}
 

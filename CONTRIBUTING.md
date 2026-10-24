@@ -3,7 +3,7 @@
 Thank you for considering contributing to RankCore!
 
 ## Development Setup
-1. Ensure you have Go 1.23+ installed.
+1. Ensure you have Go 1.26+ installed.
 2. Clone the repository.
 3. Run `go test ./...` to ensure all tests pass.
 

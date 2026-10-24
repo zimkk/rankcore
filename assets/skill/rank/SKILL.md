@@ -121,7 +121,13 @@ Typical audit:
 
 ```bash
 rankcore audit http://localhost:<port> --out .rankcore/runs/<run-id> --json
+# or a static build output directory, served on a loopback port:
+rankcore audit ./dist --out .rankcore/runs/<run-id> --json
 ```
+
+With `--json`, stdout is only the report JSON; progress goes to stderr. The engine also reads the site's XML sitemaps and robots.txt. Useful flags: `--render auto` (compare the rendered DOM when a Chromium browser exists), `--max-pages`, `--include`/`--exclude`, `--ignore-robots` (only for the user's own site). Run `rankcore explain <rule-id>` for what a rule checks and how to fix it.
+
+Each finding carries an `automation` class: `safe_auto` fixes can be applied directly, `review_required` needs product judgment, `manual_only` must not be automated (for example, thin content is fixed with real substance or consolidation, never filler).
 
 Use the audit result as evidence, not as an SEO score.
 

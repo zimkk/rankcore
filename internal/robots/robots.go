@@ -3,6 +3,7 @@ package robots
 import (
 	"bufio"
 	"io"
+	"net/url"
 	"strings"
 )
 
@@ -22,12 +23,12 @@ type RobotsTxt struct {
 // Parse reads a robots.txt stream and returns a parsed model.
 func Parse(r io.Reader) *RobotsTxt {
 	rt := &RobotsTxt{}
-	scanner := bufio.NewScanner(r)
+	scanner := bufio.NewScanner(io.LimitReader(r, 500*1024))
 
 	var currentGroup *Group
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "\ufeff"))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -92,34 +93,57 @@ func (rt *RobotsTxt) IsDisallowed(userAgent, path string) bool {
 }
 
 // findGroup locates the best matching group for the given user agent.
-// It looks for the most specific (longest) User-Agent string match first,
-// then falls back to the wildcard (*) group.
+// The most specific (longest) matching User-Agent token wins, falling back to
+// the wildcard (*) group. Per RFC 9309 §2.2.1, every group naming that same
+// token is merged into one rule set.
 func (rt *RobotsTxt) findGroup(userAgent string) *Group {
 	ua := strings.ToLower(userAgent)
 
-	var bestGroup *Group
-	bestLen := 0
-
+	best := ""
 	for _, g := range rt.Groups {
 		for _, gua := range g.UserAgents {
-			guaLower := strings.ToLower(gua)
-			if guaLower == "*" {
-				// Wildcard is only used if no more specific match exists
-				if bestLen == 0 {
-					bestGroup = g
-					// bestLen stays 0 so any specific match wins
-				}
+			token := strings.ToLower(strings.TrimSpace(gua))
+			if token == "" || token == "*" {
 				continue
 			}
-			// RFC 9309: the user-agent token is matched as a case-insensitive
-			// substring (product token) of the crawler's User-Agent string.
-			if strings.Contains(ua, guaLower) && len(guaLower) > bestLen {
-				bestGroup = g
-				bestLen = len(guaLower)
+			// The user-agent token is matched case-insensitively against the
+			// crawler's product token / User-Agent string.
+			if strings.Contains(ua, token) && len(token) > len(best) {
+				best = token
 			}
 		}
 	}
-	return bestGroup
+	if best == "" {
+		best = "*"
+	}
+
+	var merged *Group
+	for _, g := range rt.Groups {
+		for _, gua := range g.UserAgents {
+			if strings.ToLower(strings.TrimSpace(gua)) == best {
+				if merged == nil {
+					merged = &Group{}
+				}
+				merged.UserAgents = append(merged.UserAgents, gua)
+				merged.Allow = append(merged.Allow, g.Allow...)
+				merged.Disallow = append(merged.Disallow, g.Disallow...)
+				break
+			}
+		}
+	}
+	return merged
+}
+
+// PathOf returns the path-plus-query string that robots.txt rules match against.
+func PathOf(u *url.URL) string {
+	p := u.EscapedPath()
+	if p == "" {
+		p = "/"
+	}
+	if u.RawQuery != "" {
+		p += "?" + u.RawQuery
+	}
+	return p
 }
 
 // isAllowed evaluates the Allow/Disallow rules within a single group using

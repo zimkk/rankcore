@@ -19,7 +19,7 @@ func (r *OpenGraphRule) Version() int {
 }
 
 func (r *OpenGraphRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 || snapshot.Noindex() {
+	if !isHTMLOK(snapshot) || snapshot.Noindex() {
 		return nil
 	}
 
