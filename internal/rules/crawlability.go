@@ -14,8 +14,8 @@ func (r *HTTPSuccessRule) Version() int { return 1 }
 func (r *HTTPSuccessRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
 	// Skip pages that already trigger 5xx or 4xx rules — this catches 3xx/redirect-only endpoints
 	// and pages that return 0 (connection failure).
-	if snapshot.StatusCode == 200 {
-		return nil
+	if snapshot.StatusCode == 200 || snapshot.Skipped != "" || snapshot.RedirectLoop {
+		return nil // loops are reported by RC-HTTP-005
 	}
 	// 5xx and 4xx are covered by existing rules, so only flag unusual non-200 states.
 	if snapshot.StatusCode >= 400 {
@@ -35,6 +35,7 @@ func (r *HTTPSuccessRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding
 			Evidence: map[string]interface{}{
 				"status_code": snapshot.StatusCode,
 				"final_url":   snapshot.FinalURL,
+				"error":       snapshot.FetchError,
 			},
 		}
 	}

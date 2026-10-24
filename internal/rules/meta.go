@@ -14,42 +14,36 @@ func (r *MetaNoindexRule) ID() string {
 }
 
 func (r *MetaNoindexRule) Version() int {
-	return 1
+	return 2
 }
 
 func (r *MetaNoindexRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	noindex := snapshot.Noindex()
-
-	// Also check raw Headers map if populated
-	if !noindex && snapshot.Headers != nil {
+	xRobots := snapshot.XRobotsTag
+	if xRobots == "" && snapshot.Headers != nil {
+		// Hand-built snapshots may only carry raw headers.
 		for k, vals := range snapshot.Headers {
 			if strings.EqualFold(k, "X-Robots-Tag") {
-				for _, v := range vals {
-					lower := strings.ToLower(v)
-					if strings.Contains(lower, "noindex") || strings.Contains(lower, "none") {
-						noindex = true
-						break
-					}
-				}
+				xRobots = strings.Join(vals, ", ")
 			}
 		}
 	}
-
-	if noindex {
-		return &report.Finding{
-			ID:          r.ID(),
-			RuleVersion: r.Version(),
-			Category:    "indexability",
-			Severity:    "high",
-			Confidence:  1.0,
-			URL:         snapshot.URL,
-			Summary:     "Intended public page is explicitly noindexed",
-			Evidence: map[string]interface{}{
-				"robots_meta":  snapshot.RobotsMeta,
-				"x_robots_tag": snapshot.XRobotsTag,
-			},
-			Remediation: "Remove the 'noindex' directive from meta tags or HTTP response headers if the page should be indexed.",
-		}
+	probe := crawl.PageSnapshot{RobotsMeta: snapshot.RobotsMeta, XRobotsTag: xRobots}
+	if !probe.Noindex() {
+		return nil
 	}
-	return nil
+
+	return &report.Finding{
+		ID:          r.ID(),
+		RuleVersion: r.Version(),
+		Category:    "indexability",
+		Severity:    "high",
+		Confidence:  1.0,
+		URL:         snapshot.URL,
+		Summary:     "Page carries a noindex directive; confirm it is not meant to be public",
+		Evidence: map[string]interface{}{
+			"robots_meta":  snapshot.RobotsMeta,
+			"x_robots_tag": xRobots,
+		},
+		Remediation: "Remove the 'noindex' directive from meta tags or HTTP response headers if the page should be indexed.",
+	}
 }

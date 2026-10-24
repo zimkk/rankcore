@@ -8,9 +8,11 @@ $Repo = "zimkk/rankcore"
 $InstallDir = if ($env:RANKCORE_INSTALL_DIR) { $env:RANKCORE_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Programs\RankCore" }
 $Version = if ($env:RANKCORE_VERSION) { $env:RANKCORE_VERSION } else { "latest" }
 
+# Throw rather than exit: this script usually runs via "irm | iex", where exit
+# would close the user's PowerShell session.
 function Fail($Message) {
     Write-Host "error: $Message" -ForegroundColor Red
-    exit 1
+    throw "RankCore installation failed."
 }
 
 $Arch = switch ($env:PROCESSOR_ARCHITECTURE.ToUpper()) {
@@ -39,7 +41,7 @@ try {
     try {
         Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $AssetPath -UseBasicParsing
     } catch {
-        Fail "Download failed. A precompiled release for windows/$Arch may not be published yet.`nBuild from source instead (requires Go 1.23+):`n  go install github.com/$Repo/cmd/rankcore@latest"
+        Fail "Download failed. A precompiled release for windows/$Arch may not be published yet.`nBuild from source instead (requires Go 1.26+):`n  go install github.com/$Repo/cmd/rankcore@latest"
     }
     try {
         Invoke-WebRequest -Uri "$BaseUrl/checksums.txt" -OutFile $ChecksumsPath -UseBasicParsing
@@ -59,8 +61,10 @@ try {
     Write-Host "Installed rankcore to $Dest"
 
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $UserPath) { $UserPath = "" }
     if (-not ($UserPath -split ";" | Where-Object { $_ -eq $InstallDir })) {
-        [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
+        $NewPath = (@($UserPath.TrimEnd(";"), $InstallDir) | Where-Object { $_ }) -join ";"
+        [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
         $env:Path = "$env:Path;$InstallDir"
         Write-Host "Added $InstallDir to your user PATH (restart your terminal to pick it up everywhere)."
     }

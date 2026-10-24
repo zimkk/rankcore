@@ -14,7 +14,7 @@ func (r *MissingTitleRule) ID() string   { return "RC-META-001" }
 func (r *MissingTitleRule) Version() int { return 1 }
 
 func (r *MissingTitleRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	if strings.TrimSpace(snapshot.Title) == "" {
@@ -41,7 +41,7 @@ func (r *MissingMetaDescRule) ID() string   { return "RC-META-002" }
 func (r *MissingMetaDescRule) Version() int { return 1 }
 
 func (r *MissingMetaDescRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	if strings.TrimSpace(snapshot.MetaDesc) == "" {
@@ -68,7 +68,7 @@ func (r *MissingViewportRule) ID() string   { return "RC-META-003" }
 func (r *MissingViewportRule) Version() int { return 1 }
 
 func (r *MissingViewportRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	vp := strings.TrimSpace(snapshot.Viewport)

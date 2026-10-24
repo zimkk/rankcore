@@ -19,7 +19,7 @@ func (r *H1StructureRule) Version() int {
 }
 
 func (r *H1StructureRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 || snapshot.Noindex() {
+	if !isHTMLOK(snapshot) || snapshot.Noindex() {
 		return nil
 	}
 

@@ -21,7 +21,7 @@ func (r *CanonicalProtocolRule) Version() int {
 }
 
 func (r *CanonicalProtocolRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.Canonical == "" || snapshot.StatusCode != 200 {
+	if snapshot.Canonical == "" || !isHTMLOK(snapshot) {
 		return nil
 	}
 

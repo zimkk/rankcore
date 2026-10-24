@@ -43,7 +43,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 info "Downloading ${ASSET} from GitHub Releases..."
 if ! curl -fsSL "${BASE_URL}/${ASSET}" -o "${TMP_DIR}/${ASSET}"; then
     fail "Download failed. A precompiled release for ${OS}/${ARCH} may not be published yet.
-Build from source instead (requires Go 1.23+):
+Build from source instead (requires Go 1.26+):
   go install github.com/${REPO}/cmd/rankcore@latest"
 fi
 curl -fsSL "${BASE_URL}/checksums.txt" -o "${TMP_DIR}/checksums.txt" \

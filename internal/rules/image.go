@@ -12,7 +12,7 @@ func (r *ImageAltRule) ID() string   { return "RC-IMG-001" }
 func (r *ImageAltRule) Version() int { return 1 }
 
 func (r *ImageAltRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	if len(snapshot.Images) == 0 {

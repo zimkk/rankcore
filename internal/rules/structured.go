@@ -14,7 +14,7 @@ func (r *StructuredDataValidRule) ID() string   { return "RC-STRUCT-001" }
 func (r *StructuredDataValidRule) Version() int { return 1 }
 
 func (r *StructuredDataValidRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 {
+	if !isHTMLOK(snapshot) {
 		return nil
 	}
 	if len(snapshot.JSONLD) == 0 {

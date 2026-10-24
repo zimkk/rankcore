@@ -32,9 +32,13 @@ func NormalizeURL(rawURL string, base *url.URL) (string, error) {
 	u.Host = strings.ToLower(u.Host)
 
 	// Drop default ports.
-	if (u.Scheme == "http" && strings.HasSuffix(u.Host, ":80")) ||
-		(u.Scheme == "https" && strings.HasSuffix(u.Host, ":443")) {
-		u.Host = u.Host[:len(u.Host)-3]
+	if port := u.Port(); (u.Scheme == "http" && port == "80") || (u.Scheme == "https" && port == "443") {
+		u.Host = strings.TrimSuffix(u.Host, ":"+port)
+	}
+
+	// "https://example.com" and "https://example.com/" are the same resource.
+	if u.Path == "" && u.Opaque == "" {
+		u.Path = "/"
 	}
 
 	return u.String(), nil

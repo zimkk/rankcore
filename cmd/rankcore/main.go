@@ -5,56 +5,63 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/zimkk/rankcore/assets"
 	"github.com/zimkk/rankcore/internal/audit"
+	"github.com/zimkk/rankcore/internal/render"
 	"github.com/zimkk/rankcore/internal/report"
 	"github.com/zimkk/rankcore/internal/rules"
 	"github.com/zimkk/rankcore/internal/setup"
 	"github.com/zimkk/rankcore/internal/verify"
+	"github.com/zimkk/rankcore/internal/version"
 )
 
+// Exit codes (master plan §12.9).
 const (
-	version        = "1.0.0"
-	rulesetVersion = "2026.09"
-	schemaVersion  = 1
+	exitOK    = 0
+	exitError = 1
+	exitGate  = 2
 )
 
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	command := os.Args[1]
+	args := os.Args[2:]
 
 	switch command {
 	case "setup":
-		runSetup()
+		runSetup(args)
 	case "doctor":
-		runDoctor()
+		runDoctor(args)
 	case "audit":
-		runAudit()
+		runAudit(args)
 	case "verify":
-		runVerify()
+		runVerify(args)
 	case "explain":
-		runExplain()
-	case "version":
-		runVersion()
+		runExplain(args)
+	case "version", "--version", "-v":
+		runVersion(args)
 	case "uninstall":
-		runUninstall()
+		runUninstall(args)
 	case "update":
 		runUpdate()
-	default:
-		fmt.Printf("Unknown command: %s\n", command)
+	case "help", "--help", "-h":
 		printUsage()
-		os.Exit(1)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
+		printUsage()
+		os.Exit(exitError)
 	}
 }
 
@@ -66,61 +73,85 @@ func printUsage() {
 	fmt.Println("Commands:")
 	fmt.Println("  setup      Install/update the rank skill into detected agents")
 	fmt.Println("  doctor     Check environment health")
-	fmt.Println("  audit      Run deterministic SEO audit against a target")
+	fmt.Println("  audit      Run deterministic SEO audit against a URL or local directory")
 	fmt.Println("  verify     Re-run checks and compare against a baseline")
 	fmt.Println("  explain    Print documentation for a specific rule")
 	fmt.Println("  version    Show version information")
-	fmt.Println("  uninstall  Remove installed RankCore skills and metadata")
-	fmt.Println("  update     Check for and install updates from GitHub")
+	fmt.Println("  uninstall  Remove installed RankCore skills")
+	fmt.Println("  update     Show how to update RankCore")
+	fmt.Println()
+	fmt.Println("Run 'rankcore <command> -h' for command flags.")
 }
 
-// ── setup ───────────────────────────────────────────────────────────────────
+// parseArgs parses flags that may appear before or after positional arguments
+// (the standard flag package stops at the first positional).
+func parseArgs(fs *flag.FlagSet, args []string) []string {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			os.Exit(exitError)
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			return positional
+		}
+		if args[0] == "--" {
+			return append(positional, args[1:]...)
+		}
+		positional = append(positional, args[0])
+		args = args[1:]
+	}
+}
 
-func runSetup() {
-	fs := flag.NewFlagSet("setup", flag.ExitOnError)
-	agentFlag := fs.String("agent", "", "Specific agent to setup (e.g. claude-code)")
-	dryRunFlag := fs.Bool("dry-run", false, "Simulate setup without writing files")
-	allFlag := fs.Bool("all", false, "Install for all detected agents")
-	fs.Parse(os.Args[2:])
-
+func loadRegistry() *setup.Registry {
 	regFile, err := assets.FS.Open("agent-registry.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not read embedded agent registry: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 	defer regFile.Close()
 
 	reg, err := setup.LoadRegistry(regFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not parse agent registry: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
+	return reg
+}
+
+// ── setup ───────────────────────────────────────────────────────────────────
+
+func runSetup(args []string) {
+	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	agentFlag := fs.String("agent", "", "Specific agent to set up (e.g. claude-code); installs even if not detected")
+	dryRunFlag := fs.Bool("dry-run", false, "Simulate setup without writing files")
+	allFlag := fs.Bool("all", false, "Install for every agent in the registry, detected or not")
+	parseArgs(fs, args)
+
+	reg := loadRegistry()
 
 	fmt.Println("RankCore setup")
 	fmt.Println()
 
 	detected := setup.DetectAgents(reg)
+	detectedIDs := map[string]bool{}
+	for _, a := range detected {
+		detectedIDs[a.ID] = true
+	}
 
 	fmt.Println("Detected:")
-	for _, a := range detected {
-		fmt.Printf("  ✓ %s\n", a.Name)
-	}
 	for _, a := range reg.Agents {
-		found := false
-		for _, d := range detected {
-			if d.ID == a.ID {
-				found = true
-				break
-			}
+		mark := "○"
+		if detectedIDs[a.ID] {
+			mark = "✓"
 		}
-		if !found {
-			fmt.Printf("  ○ %s\n", a.Name)
-		}
+		fmt.Printf("  %s %s\n", mark, a.Name)
 	}
 	fmt.Println()
 
 	targets := detected
-	if *agentFlag != "" {
+	switch {
+	case *agentFlag != "":
 		targets = nil
 		for _, a := range reg.Agents {
 			if a.ID == *agentFlag {
@@ -130,25 +161,34 @@ func runSetup() {
 		}
 		if len(targets) == 0 {
 			fmt.Fprintf(os.Stderr, "error: agent %q not found in registry\n", *agentFlag)
-			os.Exit(1)
+			os.Exit(exitError)
 		}
+	case *allFlag:
+		targets = reg.Agents
 	}
-	_ = allFlag
+
+	if len(targets) == 0 {
+		fmt.Println("No supported coding agents detected. Use --agent <id> or --all to install anyway.")
+		return
+	}
 
 	fmt.Println("Installing /rank:")
+	failed := false
 	for _, agent := range targets {
 		if err := setup.InstallSkill(agent, assets.FS, *dryRunFlag); err != nil {
 			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", agent.Name, err)
-		} else {
-			homeDir, _ := os.UserHomeDir()
+			failed = true
+		} else if !*dryRunFlag {
 			for _, p := range agent.Paths {
-				expanded := strings.Replace(p, "~", homeDir, 1)
-				fmt.Printf("  ✓ %s\n", expanded)
+				fmt.Printf("  ✓ %s\n", setup.ExpandHome(p))
 			}
 		}
 	}
 	fmt.Println()
-	fmt.Printf("Engine:\n  ✓ rankcore %s\n\n", version)
+	fmt.Printf("Engine:\n  ✓ rankcore %s\n\n", version.Version)
+	if failed {
+		os.Exit(exitError)
+	}
 	fmt.Println("Ready. Open a web project and type /rank.")
 }
 
@@ -166,10 +206,12 @@ type doctorReport struct {
 }
 
 type doctorAgent struct {
-	Name     string `json:"name"`
-	Detected bool   `json:"detected"`
-	SkillDir string `json:"skill_dir"`
-	Writable bool   `json:"writable"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Detected       bool   `json:"detected"`
+	SkillDir       string `json:"skill_dir"`
+	SkillInstalled bool   `json:"skill_installed"`
+	Writable       bool   `json:"writable"`
 }
 
 type doctorBrowser struct {
@@ -177,193 +219,186 @@ type doctorBrowser struct {
 	Path      string `json:"path,omitempty"`
 }
 
-func runDoctor() {
+func runDoctor(args []string) {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	jsonFlag := fs.Bool("json", false, "Output in JSON format")
-	fs.Parse(os.Args[2:])
+	parseArgs(fs, args)
 
-	registry := rules.NewRegistry()
-
-	regFile, err := assets.FS.Open("agent-registry.json")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer regFile.Close()
-
-	reg, _ := setup.LoadRegistry(regFile)
-
+	reg := loadRegistry()
 	dr := doctorReport{
 		Status:         "ok",
-		Version:        version,
-		RulesetVersion: rulesetVersion,
-		SchemaVersion:  schemaVersion,
-		RuleCount:      registry.Count(),
+		Version:        version.Version,
+		RulesetVersion: version.RulesetVersion,
+		SchemaVersion:  version.SchemaVersion,
+		RuleCount:      rules.NewRegistry().Count(),
 		Platform:       runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
-	homeDir, _ := os.UserHomeDir()
-
-	if reg != nil {
-		detected := setup.DetectAgents(reg)
-		detectedMap := map[string]bool{}
-		for _, d := range detected {
-			detectedMap[d.ID] = true
+	detected := map[string]bool{}
+	for _, d := range setup.DetectAgents(reg) {
+		detected[d.ID] = true
+	}
+	for _, a := range reg.Agents {
+		da := doctorAgent{ID: a.ID, Name: a.Name, Detected: detected[a.ID]}
+		if len(a.Paths) > 0 {
+			da.SkillDir = setup.ExpandHome(a.Paths[0])
+			_, err := os.Stat(da.SkillDir + string(os.PathSeparator) + "SKILL.md")
+			da.SkillInstalled = err == nil
+			da.Writable = setup.Writable(da.SkillDir)
 		}
-		for _, a := range reg.Agents {
-			skillDir := ""
-			writable := false
-			if len(a.Paths) > 0 {
-				skillDir = strings.Replace(a.Paths[0], "~", homeDir, 1)
-				if dir := filepath.Dir(skillDir); dir != "" {
-					if f, err := os.OpenFile(filepath.Join(dir, ".rankcore_test"), os.O_CREATE|os.O_WRONLY, 0644); err == nil {
-						f.Close()
-						os.Remove(filepath.Join(dir, ".rankcore_test"))
-						writable = true
-					}
-				}
-			}
-			dr.Agents = append(dr.Agents, doctorAgent{
-				Name:     a.Name,
-				Detected: detectedMap[a.ID],
-				SkillDir: skillDir,
-				Writable: writable,
-			})
-		}
+		dr.Agents = append(dr.Agents, da)
 	}
 
-	// Check for Chromium
-	browserPath := findChromium()
+	browserPath := render.FindChromium()
 	dr.Browser.Available = browserPath != ""
 	dr.Browser.Path = browserPath
 
 	if *jsonFlag {
 		data, _ := json.MarshalIndent(dr, "", "  ")
 		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Printf("RankCore Doctor\n\n")
+	fmt.Printf("  Version:  %s\n", dr.Version)
+	fmt.Printf("  Ruleset:  %s (%d rules)\n", dr.RulesetVersion, dr.RuleCount)
+	fmt.Printf("  Platform: %s\n\n", dr.Platform)
+
+	fmt.Println("  Agents:")
+	for _, a := range dr.Agents {
+		mark := "○"
+		if a.Detected {
+			mark = "✓"
+		}
+		notes := []string{}
+		if a.SkillInstalled {
+			notes = append(notes, "skill installed")
+		} else if a.Detected {
+			notes = append(notes, "run 'rankcore setup'")
+		}
+		if a.Detected && !a.Writable {
+			notes = append(notes, "not writable")
+		}
+		suffix := ""
+		if len(notes) > 0 {
+			suffix = " (" + strings.Join(notes, ", ") + ")"
+		}
+		fmt.Printf("    %s %s%s\n", mark, a.Name, suffix)
+	}
+
+	fmt.Println()
+	if dr.Browser.Available {
+		fmt.Printf("  Browser: ✓ %s\n", dr.Browser.Path)
 	} else {
-		fmt.Printf("RankCore Doctor\n\n")
-		fmt.Printf("  Version:  %s\n", dr.Version)
-		fmt.Printf("  Ruleset:  %s (%d rules)\n", dr.RulesetVersion, dr.RuleCount)
-		fmt.Printf("  Platform: %s\n\n", dr.Platform)
-
-		fmt.Println("  Agents:")
-		for _, a := range dr.Agents {
-			mark := "○"
-			if a.Detected {
-				mark = "✓"
-			}
-			writeStatus := ""
-			if a.Detected && !a.Writable {
-				writeStatus = " (not writable)"
-			}
-			fmt.Printf("    %s %s%s\n", mark, a.Name, writeStatus)
-		}
-
-		fmt.Println()
-		if dr.Browser.Available {
-			fmt.Printf("  Browser: ✓ %s\n", dr.Browser.Path)
-		} else {
-			fmt.Println("  Browser: ○ No Chromium detected (rendered mode unavailable)")
-		}
-
-		fmt.Printf("\n  Status: %s\n", dr.Status)
+		fmt.Println("  Browser: ○ No Chromium detected (rendered mode unavailable)")
 	}
-}
 
-func findChromium() string {
-	candidates := []string{}
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = []string{
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			"/Applications/Chromium.app/Contents/MacOS/Chromium",
-			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-		}
-	case "linux":
-		candidates = []string{
-			"/usr/bin/google-chrome",
-			"/usr/bin/google-chrome-stable",
-			"/usr/bin/chromium",
-			"/usr/bin/chromium-browser",
-			"/usr/bin/microsoft-edge",
-		}
-	case "windows":
-		programFiles := os.Getenv("ProgramFiles")
-		programFilesX86 := os.Getenv("ProgramFiles(x86)")
-		localAppData := os.Getenv("LOCALAPPDATA")
-		candidates = []string{
-			filepath.Join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-		}
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return ""
+	fmt.Printf("\n  Status: %s\n", dr.Status)
 }
 
 // ── audit ───────────────────────────────────────────────────────────────────
 
-func runAudit() {
-	fs := flag.NewFlagSet("audit", flag.ExitOnError)
-	outDir := fs.String("out", ".rankcore/runs/latest", "Output directory")
-	jsonFlag := fs.Bool("json", false, "Output in JSON format")
-	renderMode := fs.String("render", "off", "Render mode: auto|off|required")
-	maxPages := fs.Int("max-pages", 500, "Maximum pages to crawl")
-	concurrency := fs.Int("concurrency", 5, "Concurrent requests")
-	include := fs.String("include", "", "URL pattern to include")
-	exclude := fs.String("exclude", "", "URL pattern to exclude")
-	format := fs.String("format", "json", "Output format: json|text|md")
-	userAgent := fs.String("user-agent", "", "Custom user agent")
-	fs.Parse(os.Args[2:])
+type auditFlags struct {
+	renderMode, browser, include, exclude, userAgent string
+	maxPages, maxDepth, maxRender, concurrency       int
+	timeout                                          time.Duration
+	ignoreRobots, noSitemap                          bool
+}
 
-	target := fs.Arg(0)
-	if target == "" {
-		fmt.Fprintln(os.Stderr, "error: audit requires a target URL")
-		fmt.Fprintln(os.Stderr, "usage: rankcore audit <url> [flags]")
-		os.Exit(1)
-	}
+func registerAuditFlags(fs *flag.FlagSet) *auditFlags {
+	d := audit.DefaultOptions()
+	f := &auditFlags{}
+	fs.StringVar(&f.renderMode, "render", d.RenderMode, "Render mode: auto|off|required")
+	fs.StringVar(&f.browser, "browser", "", "Path to a Chromium-family browser (default: auto-detect)")
+	fs.IntVar(&f.maxPages, "max-pages", d.MaxPages, "Maximum URLs to crawl")
+	fs.IntVar(&f.maxDepth, "max-depth", d.MaxDepth, "Maximum click depth from the start URL")
+	fs.IntVar(&f.maxRender, "max-render", d.MaxRender, "Maximum pages to render when rendering is on")
+	fs.IntVar(&f.concurrency, "concurrency", d.Concurrency, "Concurrent requests")
+	fs.StringVar(&f.include, "include", "", "Only crawl URLs matching this regex/substring")
+	fs.StringVar(&f.exclude, "exclude", "", "Skip URLs matching this regex/substring")
+	fs.StringVar(&f.userAgent, "user-agent", "", "Custom user agent")
+	fs.DurationVar(&f.timeout, "timeout", d.Timeout, "Per-request timeout")
+	fs.BoolVar(&f.ignoreRobots, "ignore-robots", false, "Fetch URLs robots.txt disallows for RankCoreBot (only for sites you own)")
+	fs.BoolVar(&f.noSitemap, "no-sitemap", false, "Do not read XML sitemaps")
+	return f
+}
 
+func (f *auditFlags) options(target string) audit.Options {
 	opts := audit.DefaultOptions()
 	opts.Target = target
-	opts.OutDir = *outDir
-	opts.RenderMode = *renderMode
-	opts.MaxPages = *maxPages
-	opts.Concurrency = *concurrency
-	opts.Include = *include
-	opts.Exclude = *exclude
-	opts.Format = *format
-	if *userAgent != "" {
-		opts.UserAgent = *userAgent
+	opts.RenderMode = strings.ToLower(f.renderMode)
+	opts.Browser = f.browser
+	opts.MaxPages = f.maxPages
+	opts.MaxDepth = f.maxDepth
+	opts.MaxRender = f.maxRender
+	opts.Concurrency = f.concurrency
+	opts.Include = f.include
+	opts.Exclude = f.exclude
+	opts.Timeout = f.timeout
+	opts.IgnoreRobots = f.ignoreRobots
+	opts.NoSitemap = f.noSitemap
+	if f.userAgent != "" {
+		opts.UserAgent = f.userAgent
+	}
+	return opts
+}
+
+func validateRender(mode string) {
+	switch mode {
+	case "auto", "off", "required":
+	default:
+		fmt.Fprintf(os.Stderr, "error: --render must be auto, off or required (got %q)\n", mode)
+		os.Exit(exitError)
+	}
+}
+
+func signalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt)
+}
+
+func runAudit(args []string) {
+	fs := flag.NewFlagSet("audit", flag.ExitOnError)
+	outDir := fs.String("out", ".rankcore/runs/latest", "Output directory")
+	jsonFlag := fs.Bool("json", false, "Print the audit JSON to stdout (progress goes to stderr)")
+	format := fs.String("format", "both", "Artifacts to write: both (audit.json + audit.md) | json-only")
+	failOn := fs.String("fail-on", "", "Exit 2 if any finding is at or above this severity: low|medium|high|critical")
+	af := registerAuditFlags(fs)
+	pos := parseArgs(fs, args)
+
+	if len(pos) == 0 {
+		fmt.Fprintln(os.Stderr, "error: audit requires a target URL or directory")
+		fmt.Fprintln(os.Stderr, "usage: rankcore audit <url|dir> [flags]")
+		os.Exit(exitError)
+	}
+	validateRender(strings.ToLower(af.renderMode))
+	if *failOn != "" && report.SeverityRank(*failOn) == 0 {
+		fmt.Fprintf(os.Stderr, "error: --fail-on must be low, medium, high or critical (got %q)\n", *failOn)
+		os.Exit(exitError)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	opts := af.options(pos[0])
+	opts.OutDir = *outDir
+	opts.Format = *format
+
+	ctx, cancel := signalContext()
 	defer cancel()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	go func() {
-		<-sig
-		fmt.Println("\nInterrupted. Stopping crawl...")
-		cancel()
-	}()
-
-	fmt.Printf("RankCore audit: %s\n", target)
-	fmt.Printf("  Max pages: %d | Concurrency: %d | Render: %s\n\n", opts.MaxPages, opts.Concurrency, opts.RenderMode)
+	var progress io.Writer = os.Stdout
+	if *jsonFlag {
+		progress = os.Stderr
+	}
+	fmt.Fprintf(progress, "RankCore audit: %s\n", opts.Target)
+	fmt.Fprintf(progress, "  Max pages: %d | Concurrency: %d | Render: %s\n\n", opts.MaxPages, opts.Concurrency, opts.RenderMode)
 
 	auditReport, err := audit.Run(ctx, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	if err := audit.SaveReport(auditReport, opts.OutDir, opts.Format); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving report: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	if *jsonFlag {
@@ -371,6 +406,15 @@ func runAudit() {
 		fmt.Println(string(data))
 	} else {
 		printAuditSummary(auditReport, opts.OutDir)
+	}
+
+	if *failOn != "" {
+		threshold := report.SeverityRank(*failOn)
+		for _, f := range auditReport.Findings {
+			if report.SeverityRank(f.Severity) >= threshold {
+				os.Exit(exitGate)
+			}
+		}
 	}
 }
 
@@ -406,165 +450,176 @@ func printAuditSummary(r *report.AuditReport, outDir string) {
 
 // ── verify ──────────────────────────────────────────────────────────────────
 
-func runVerify() {
+func runVerify(args []string) {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
 	baseline := fs.String("baseline", "", "Baseline audit.json to compare against")
 	outDir := fs.String("out", ".rankcore/runs/verify", "Output directory")
-	jsonFlag := fs.Bool("json", false, "Output in JSON format")
-	fs.Parse(os.Args[2:])
+	jsonFlag := fs.Bool("json", false, "Print the verification JSON to stdout")
+	af := registerAuditFlags(fs)
+	pos := parseArgs(fs, args)
 
-	target := fs.Arg(0)
-	if target == "" || *baseline == "" {
-		fmt.Fprintln(os.Stderr, "error: verify requires a target URL and --baseline")
-		fmt.Fprintln(os.Stderr, "usage: rankcore verify <url> --baseline <audit.json> [flags]")
-		os.Exit(1)
+	if len(pos) == 0 || *baseline == "" {
+		fmt.Fprintln(os.Stderr, "error: verify requires a target and --baseline")
+		fmt.Fprintln(os.Stderr, "usage: rankcore verify <url|dir> --baseline <audit.json> [flags]")
+		os.Exit(exitError)
 	}
+	validateRender(strings.ToLower(af.renderMode))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signalContext()
 	defer cancel()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	go func() {
-		<-sig
-		cancel()
-	}()
+	var progress io.Writer = os.Stdout
+	if *jsonFlag {
+		progress = os.Stderr
+	}
+	fmt.Fprintf(progress, "RankCore verify: %s\n", pos[0])
+	fmt.Fprintf(progress, "  Baseline: %s\n\n", *baseline)
 
-	fmt.Printf("RankCore verify: %s\n", target)
-	fmt.Printf("  Baseline: %s\n\n", *baseline)
-
-	vr, err := verify.Run(ctx, verify.Options{
-		Target:       target,
+	opts := af.options(pos[0])
+	vr, newRun, err := verify.Run(ctx, verify.Options{
+		Target:       pos[0],
 		BaselinePath: *baseline,
 		OutDir:       *outDir,
+		Audit:        &opts,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
 	if err := verify.SaveReport(vr, *outDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving report: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitError)
+	}
+	if err := audit.SaveReport(newRun, *outDir, "both"); err != nil {
+		fmt.Fprintf(os.Stderr, "error saving re-audit: %v\n", err)
+		os.Exit(exitError)
 	}
 
 	if *jsonFlag {
 		data, _ := json.MarshalIndent(vr, "", "  ")
 		fmt.Println(string(data))
 	} else {
-		counts := map[string]int{}
-		for _, r := range vr.Results {
-			counts[r.Status]++
-		}
 		fmt.Println("Verification complete.")
 		for _, status := range []string{"fixed", "still_present", "regressed", "not_retestable", "new"} {
-			if c, ok := counts[status]; ok {
+			if c, ok := vr.Summary[status]; ok {
 				fmt.Printf("  %s: %d\n", status, c)
 			}
 		}
 		fmt.Printf("\n  Report: %s/verification.json\n", *outDir)
 	}
+
+	if verify.Gate(vr) {
+		os.Exit(exitGate)
+	}
 }
 
 // ── explain ─────────────────────────────────────────────────────────────────
 
-func runExplain() {
+func runExplain(args []string) {
 	fs := flag.NewFlagSet("explain", flag.ExitOnError)
-	fs.Parse(os.Args[2:])
+	pos := parseArgs(fs, args)
 
-	ruleID := fs.Arg(0)
-	if ruleID == "" {
-		// List all rules
-		registry := rules.NewRegistry()
+	registry := rules.NewRegistry()
+	if len(pos) == 0 {
 		fmt.Println("Available rules:")
 		fmt.Println()
 		for _, r := range registry.All() {
-			fmt.Printf("  %s (v%d)\n", r.ID(), r.Version())
+			fmt.Printf("  %-16s v%d  %s\n", r.ID(), r.Version(), rules.Name(r.ID()))
 		}
 		fmt.Printf("\nTotal: %d rules\n", registry.Count())
 		fmt.Println("\nUsage: rankcore explain <rule-id>")
 		return
 	}
 
-	registry := rules.NewRegistry()
-	rule := registry.Find(ruleID)
+	rule := registry.Find(pos[0])
 	if rule == nil {
-		fmt.Fprintf(os.Stderr, "error: unknown rule %q\n", ruleID)
+		fmt.Fprintf(os.Stderr, "error: unknown rule %q\n", pos[0])
 		fmt.Fprintln(os.Stderr, "Run 'rankcore explain' to list all rules.")
-		os.Exit(1)
+		os.Exit(exitError)
 	}
 
-	doc := rules.Documentation(rule)
-	fmt.Println(doc)
+	fmt.Println(rules.Documentation(rule))
 }
 
 // ── version ─────────────────────────────────────────────────────────────────
 
-func runVersion() {
+// buildInfo returns the injected build time and the VCS commit, when known.
+func buildInfo() (built, commit string) {
+	built = version.BuildTime
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" && len(s.Value) >= 12 {
+				commit = s.Value[:12]
+			}
+		}
+	}
+	return built, commit
+}
+
+func runVersion(args []string) {
 	fs := flag.NewFlagSet("version", flag.ExitOnError)
 	jsonFlag := fs.Bool("json", false, "Output in JSON format")
-	fs.Parse(os.Args[2:])
+	parseArgs(fs, args)
 
 	registry := rules.NewRegistry()
 
 	if *jsonFlag {
 		v := map[string]interface{}{
-			"version":         version,
-			"ruleset_version": rulesetVersion,
-			"schema_version":  schemaVersion,
+			"version":         version.Version,
+			"ruleset_version": version.RulesetVersion,
+			"schema_version":  version.SchemaVersion,
 			"rule_count":      registry.Count(),
 			"go_version":      runtime.Version(),
 			"platform":        runtime.GOOS + "/" + runtime.GOARCH,
-			"build_time":      time.Now().Format(time.RFC3339),
+		}
+		built, commit := buildInfo()
+		if built != "" {
+			v["build_time"] = built
+		}
+		if commit != "" {
+			v["commit"] = commit
 		}
 		data, _ := json.MarshalIndent(v, "", "  ")
 		fmt.Println(string(data))
-	} else {
-		fmt.Printf("rankcore %s\n", version)
-		fmt.Printf("  Ruleset:  %s (%d rules)\n", rulesetVersion, registry.Count())
-		fmt.Printf("  Schema:   v%d\n", schemaVersion)
-		fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-		fmt.Printf("  Go:       %s\n", runtime.Version())
+		return
 	}
+	fmt.Printf("rankcore %s\n", version.Version)
+	fmt.Printf("  Ruleset:  %s (%d rules)\n", version.RulesetVersion, registry.Count())
+	fmt.Printf("  Schema:   v%d\n", version.SchemaVersion)
+	fmt.Printf("  Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("  Go:       %s\n", runtime.Version())
 }
 
 // ── uninstall ───────────────────────────────────────────────────────────────
 
-func runUninstall() {
+func runUninstall(args []string) {
 	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
 	dryRunFlag := fs.Bool("dry-run", false, "Show what would be removed")
-	fs.Parse(os.Args[2:])
+	parseArgs(fs, args)
 
-	regFile, err := assets.FS.Open("agent-registry.json")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer regFile.Close()
-
-	reg, _ := setup.LoadRegistry(regFile)
-	homeDir, _ := os.UserHomeDir()
+	reg := loadRegistry()
 
 	fmt.Println("RankCore uninstall")
 	fmt.Println()
 
 	removed := 0
-	if reg != nil {
-		for _, agent := range reg.Agents {
-			for _, p := range agent.Paths {
-				expanded := strings.Replace(p, "~", homeDir, 1)
-				if _, err := os.Stat(expanded); err == nil {
-					if *dryRunFlag {
-						fmt.Printf("  [DRY RUN] Would remove: %s\n", expanded)
-					} else {
-						if err := os.RemoveAll(expanded); err != nil {
-							fmt.Fprintf(os.Stderr, "  ✗ Failed to remove %s: %v\n", expanded, err)
-						} else {
-							fmt.Printf("  ✓ Removed: %s\n", expanded)
-							removed++
-						}
-					}
-				}
+	for _, agent := range reg.Agents {
+		for _, p := range agent.Paths {
+			expanded := setup.ExpandHome(p)
+			// Only remove directories that hold a RankCore skill.
+			if !setup.IsRankSkillDir(expanded) {
+				continue
+			}
+			if *dryRunFlag {
+				fmt.Printf("  [DRY RUN] Would remove: %s\n", expanded)
+				continue
+			}
+			if err := os.RemoveAll(expanded); err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ Failed to remove %s: %v\n", expanded, err)
+			} else {
+				fmt.Printf("  ✓ Removed: %s\n", expanded)
+				removed++
 			}
 		}
 	}
@@ -581,6 +636,7 @@ func runUninstall() {
 func runUpdate() {
 	fmt.Println("RankCore update")
 	fmt.Println()
+	fmt.Printf("  Installed: %s\n\n", version.Version)
 	fmt.Println("  To update RankCore, re-run the installer:")
 	fmt.Println()
 	switch runtime.GOOS {

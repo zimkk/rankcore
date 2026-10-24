@@ -34,15 +34,18 @@ type Report struct {
 	Results []PolicyResult `json:"results"`
 }
 
-// KnownCrawlers is the registry of known AI and search crawlers,
-// based on official documentation as of 2026-09.
+// KnownCrawlers is the registry of known AI and search crawlers, based on each
+// operator's published crawler documentation. Purposes:
+//   - search: indexing for search results and AI answers with citations
+//   - user_fetch: a page fetched because a user asked an assistant to open it
+//   - training: bulk collection for model training (a publisher choice, never an SEO issue)
 var KnownCrawlers = []CrawlerEntry{
 	// Google
 	{Name: "Googlebot", UserAgent: "Googlebot", Operator: "Google", Purpose: PurposeSearch},
 	{Name: "Googlebot-Image", UserAgent: "Googlebot-Image", Operator: "Google", Purpose: PurposeSearch},
 	{Name: "Google-Extended", UserAgent: "Google-Extended", Operator: "Google", Purpose: PurposeTraining},
 
-	// Bing
+	// Microsoft
 	{Name: "Bingbot", UserAgent: "Bingbot", Operator: "Microsoft", Purpose: PurposeSearch},
 
 	// OpenAI
@@ -55,16 +58,30 @@ var KnownCrawlers = []CrawlerEntry{
 	{Name: "Claude-User", UserAgent: "Claude-User", Operator: "Anthropic", Purpose: PurposeUserFetch},
 	{Name: "ClaudeBot", UserAgent: "ClaudeBot", Operator: "Anthropic", Purpose: PurposeTraining},
 
-	// Meta
-	{Name: "Meta-ExternalAgent", UserAgent: "Meta-ExternalAgent", Operator: "Meta", Purpose: PurposeTraining},
-	{Name: "FacebookBot", UserAgent: "FacebookBot", Operator: "Meta", Purpose: PurposeSearch},
+	// Perplexity
+	{Name: "PerplexityBot", UserAgent: "PerplexityBot", Operator: "Perplexity", Purpose: PurposeSearch},
+	{Name: "Perplexity-User", UserAgent: "Perplexity-User", Operator: "Perplexity", Purpose: PurposeUserFetch},
 
 	// Apple
 	{Name: "Applebot", UserAgent: "Applebot", Operator: "Apple", Purpose: PurposeSearch},
 	{Name: "Applebot-Extended", UserAgent: "Applebot-Extended", Operator: "Apple", Purpose: PurposeTraining},
 
-	// Perplexity
-	{Name: "PerplexityBot", UserAgent: "PerplexityBot", Operator: "Perplexity", Purpose: PurposeSearch},
+	// DuckDuckGo
+	{Name: "DuckAssistBot", UserAgent: "DuckAssistBot", Operator: "DuckDuckGo", Purpose: PurposeSearch},
+
+	// Amazon
+	{Name: "Amazonbot", UserAgent: "Amazonbot", Operator: "Amazon", Purpose: PurposeSearch},
+
+	// Meta
+	{Name: "Meta-ExternalFetcher", UserAgent: "Meta-ExternalFetcher", Operator: "Meta", Purpose: PurposeUserFetch},
+	{Name: "Meta-ExternalAgent", UserAgent: "Meta-ExternalAgent", Operator: "Meta", Purpose: PurposeTraining},
+	{Name: "FacebookBot", UserAgent: "FacebookBot", Operator: "Meta", Purpose: PurposeTraining},
+
+	// Mistral
+	{Name: "MistralAI-User", UserAgent: "MistralAI-User", Operator: "Mistral", Purpose: PurposeUserFetch},
+
+	// ByteDance
+	{Name: "Bytespider", UserAgent: "Bytespider", Operator: "ByteDance", Purpose: PurposeTraining},
 
 	// Common Crawl
 	{Name: "CCBot", UserAgent: "CCBot", Operator: "Common Crawl", Purpose: PurposeTraining},

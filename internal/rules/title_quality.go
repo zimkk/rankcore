@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/zimkk/rankcore/internal/crawl"
 	"github.com/zimkk/rankcore/internal/report"
@@ -30,7 +31,7 @@ var genericTitles = map[string]bool{
 }
 
 func (r *TitleQualityRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Finding {
-	if snapshot.StatusCode != 200 || snapshot.Noindex() {
+	if !isHTMLOK(snapshot) || snapshot.Noindex() {
 		return nil
 	}
 
@@ -58,7 +59,7 @@ func (r *TitleQualityRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Findin
 		}
 	}
 
-	if len(title) > 70 {
+	if utf8.RuneCountInString(title) > 70 {
 		return &report.Finding{
 			ID:          r.ID(),
 			RuleVersion: r.Version(),
@@ -66,17 +67,17 @@ func (r *TitleQualityRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Findin
 			Severity:    "low",
 			Confidence:  0.8,
 			URL:         snapshot.URL,
-			Summary:     fmt.Sprintf("Title tag is too long (%d characters, recommended <= 60-70)", len(title)),
+			Summary:     fmt.Sprintf("Title tag is too long (%d characters, recommended <= 60-70)", utf8.RuneCountInString(title)),
 			Evidence: map[string]interface{}{
 				"title":  title,
-				"length": len(title),
+				"length": utf8.RuneCountInString(title),
 				"max":    70,
 			},
 			Remediation: "Keep title tags concise (between 30 and 60 characters) to avoid truncation in Google SERPs.",
 		}
 	}
 
-	if len(title) < 10 {
+	if utf8.RuneCountInString(title) < 10 {
 		return &report.Finding{
 			ID:          r.ID(),
 			RuleVersion: r.Version(),
@@ -84,10 +85,10 @@ func (r *TitleQualityRule) Evaluate(snapshot *crawl.PageSnapshot) *report.Findin
 			Severity:    "medium",
 			Confidence:  0.9,
 			URL:         snapshot.URL,
-			Summary:     fmt.Sprintf("Title tag is very short (%d characters)", len(title)),
+			Summary:     fmt.Sprintf("Title tag is very short (%d characters)", utf8.RuneCountInString(title)),
 			Evidence: map[string]interface{}{
 				"title":  title,
-				"length": len(title),
+				"length": utf8.RuneCountInString(title),
 				"min":    10,
 			},
 			Remediation: "Expand title with brand name and key topic phrasing (aim for 30-60 characters).",
